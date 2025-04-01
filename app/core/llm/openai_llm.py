@@ -100,7 +100,7 @@ class OpenAILLM(BaseLLM):
             
         except Exception as e:
             logger.error(f"Error al generar respuesta con OpenAI: {str(e)}")
-            raise e
+            return "Lo siento, ocurrió un error al procesar tu solicitud."
     
     def generate_with_history(self, history: List[Dict[str, str]], user_input: str) -> str:
         """

@@ -7,7 +7,7 @@ from app.core.llm.openai_llm import OpenAILLM
 class TestOpenAILLM(unittest.TestCase):
     """Tests para la implementación de OpenAI LLM."""
 
-    @patch('app.core.llm.openai_llm.OpenAI')
+    @patch('openai.OpenAI')
     def setUp(self, mock_openai):
         """Configuración común para todos los tests."""
         # Configurar mock del cliente de OpenAI
