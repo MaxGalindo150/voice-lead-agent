@@ -10,32 +10,32 @@ import logging
 from app.core.llm.base import BaseLLM
 from app import config
 
-# Configurar logging
+# Configure logging
 logger = logging.getLogger(__name__)
 
 class ConversationOrchestrator:
     """
-    Orquestador de conversaciones usando Langchain para mantener el contexto
-    y estructurar el flujo de la conversación con el lead de manera eficiente.
+    Conversation orchestrator using Langchain to maintain context
+    and structure the conversation flow with the lead efficiently.
     """
     
     def __init__(self, llm: BaseLLM, initial_context: Dict[str, Any] = None):
         """
-        Inicializa el orquestador de conversaciones.
+        Initialize the conversation orchestrator.
         
         Args:
-            llm (BaseLLM): Modelo de lenguaje a utilizar
-            initial_context (Dict[str, Any], optional): Contexto inicial si existe
+            llm (BaseLLM): Language model to use
+            initial_context (Dict[str, Any], optional): Initial context if it exists
         """
         self.llm = llm
         self.lead_info = initial_context or {}
         self.memory = ConversationBufferMemory()
         self.conversation_stage = "introduccion"
         
-        # Historial de mensajes para tracking
+        # Message history for tracking
         self.message_history = []
         
-        # Campos importantes para capturar (con prioridad)
+        # Important fields to capture (with priority)
         self.essential_fields = {
             "introduccion": ["nombre", "empresa"],
             "identificacion_necesidades": ["necesidades", "punto_dolor"],
@@ -44,43 +44,43 @@ class ConversationOrchestrator:
             "cierre": ["interes_siguiente_paso"]
         }
         
-        # Contador para manejar transiciones de etapa
+        # Counter to manage stage transitions
         self.stage_message_count = 0
         
-        # Contadores específicos para etapas finales
+        # Specific counters for final stages
         self.propuesta_message_count = 0
         self.cierre_message_count = 0
         
-        # Caché de información extraída para reducir llamadas al LLM
+        # Cache of extracted information to reduce LLM calls
         self.info_cache = {}
         
-        # Última vez que se extrajo información (para throttling)
+        # Last time information was extracted (for throttling)
         self.last_extraction_time = 0
         
-        # Estado de finalización de la conversación
+        # Conversation ending state
         self.conversation_ending = False
         self.conversation_ended = False
         
-        # Detectar si hay respuestas repetitivas
+        # Detect repetitive responses
         self.last_responses = []
         
-        # Contador de mensajes de cierre para finalización
+        # Closing message counter for finalization
         self.closing_message_count = 0
     
     def get_stage_prompt(self) -> str:
         """
-        Obtiene el prompt específico para la etapa actual de la conversación
-        con enfoque en los campos esenciales.
+        Get the specific prompt for the current stage of the conversation
+        focusing on essential fields.
         """
-        # Campos faltantes prioritarios para esta etapa
+        # Priority missing fields for this stage
         missing_fields = [field for field in self.essential_fields.get(self.conversation_stage, []) 
                           if not self.lead_info.get(field)]
         
-        # Si estamos finalizando la conversación, ignorar campos faltantes
+        # If we're ending the conversation, ignore missing fields
         if self.conversation_ending:
             return self._get_ending_prompt()
         
-        # Si estamos detectando repetición en etapas avanzadas, forzar avance
+        # If we're detecting repetition in advanced stages, force progress
         if self._is_stuck_in_stage() and self.conversation_stage in ["propuesta", "cierre"]:
             if self.conversation_stage == "propuesta":
                 return """
@@ -167,12 +167,12 @@ class ConversationOrchestrator:
     
     def _get_ending_prompt(self) -> str:
         """
-        Obtiene el prompt para finalizar la conversación de manera clara.
+        Get the prompt to end the conversation clearly.
         """
         nombre = self.lead_info.get('nombre', 'el prospecto')
         
         if self.closing_message_count == 0:
-            # Primer mensaje de cierre (preparar despedida)
+            # First closing message (prepare farewell)
             return f"""
             Es momento de finalizar la conversación con {nombre} de manera educada y profesional.
             
@@ -186,7 +186,7 @@ class ConversationOrchestrator:
             Limita tu respuesta a 3-4 oraciones como máximo.
             """
         else:
-            # Mensaje final de despedida explícita
+            # Final farewell message
             return f"""
             Este es tu mensaje final de despedida para {nombre}.
             
@@ -202,36 +202,36 @@ class ConversationOrchestrator:
     
     def _is_stuck_in_stage(self) -> bool:
         """
-        Detecta si estamos atascados repitiendo contenido similar en una etapa.
+        Detect if we're stuck repeating similar content in a stage.
         """
-        # Necesitamos al menos 3 respuestas para comparar
+        # We need at least 3 responses to compare
         if len(self.last_responses) < 3:
             return False
         
-        # Verificar las últimas 3 respuestas del asistente
+        # Check the last 3 assistant responses
         last_three = self.last_responses[-3:]
         
-        # Calcular similitud de contenido (implementación simple)
-        # En una implementación más sofisticada se podría usar similitud coseno o embeddings
+        # Calculate content similarity (simple implementation)
+        # In a more sophisticated implementation, cosine similarity or embeddings could be used
         similarity_count = 0
         for i in range(len(last_three)):
             for j in range(i+1, len(last_three)):
-                # Comparar longitudes y algunos fragmentos de texto
+                # Compare lengths and some text fragments
                 len_diff = abs(len(last_three[i]) - len(last_three[j])) / max(len(last_three[i]), len(last_three[j]))
                 content_overlap = len(set(last_three[i].split()) & set(last_three[j].split())) / len(set(last_three[i].split()) | set(last_three[j].split()))
                 
-                if len_diff < 0.3 and content_overlap > 0.5:  # Umbral de similitud
+                if len_diff < 0.3 and content_overlap > 0.5:  # Similarity threshold
                     similarity_count += 1
         
-        # Si al menos 2 pares son similares, consideramos que estamos atascados
+        # If at least 2 pairs are similar, we consider we're stuck
         return similarity_count >= 2
     
     def advance_stage(self) -> bool:
         """
-        Avanza a la siguiente etapa de la conversación y reinicia contadores.
+        Advance to the next stage of the conversation and reset counters.
         
         Returns:
-            bool: True si se avanzó a una nueva etapa, False si ya estaba en la última
+            bool: True if advanced to a new stage, False if already at the last stage
         """
         stages = ["introduccion", "identificacion_necesidades", "calificacion", "propuesta", "cierre"]
         current_index = stages.index(self.conversation_stage)
@@ -241,10 +241,10 @@ class ConversationOrchestrator:
             self.conversation_stage = stages[current_index + 1]
             self.stage_message_count = 0
             
-            # Registrar avance de etapa en logs
+            # Log stage advancement
             logger.info(f"Avanzando de etapa: {previous_stage} -> {self.conversation_stage}")
             
-            # Reiniciar contadores específicos
+            # Reset specific counters
             if self.conversation_stage == "propuesta":
                 self.propuesta_message_count = 0
             elif self.conversation_stage == "cierre":
@@ -255,7 +255,7 @@ class ConversationOrchestrator:
     
     def start_ending_sequence(self) -> None:
         """
-        Inicia la secuencia de finalización de la conversación.
+        Start the conversation ending sequence.
         """
         self.conversation_ending = True
         self.closing_message_count = 0
@@ -263,66 +263,66 @@ class ConversationOrchestrator:
     
     def should_advance_stage(self) -> bool:
         """
-        Determina si se debe avanzar a la siguiente etapa basado en la información
-        recopilada y la dinámica de la conversación.
+        Determine if we should advance to the next stage based on the information
+        collected and the conversation dynamics.
         """
         self.stage_message_count += 1
         
-        # Actualizar contadores específicos
+        # Update specific counters
         if self.conversation_stage == "propuesta":
             self.propuesta_message_count += 1
         elif self.conversation_stage == "cierre":
             self.cierre_message_count += 1
         
-        # Si ya estamos en la secuencia de finalización, no avanzar más
+        # If we're already in the ending sequence, don't advance further
         if self.conversation_ending or self.conversation_ended:
             return False
             
-        # Verificar si detectamos patrones de estancamiento
+        # Check if we detect stagnation patterns
         if self._is_stuck_in_stage():
             logger.info(f"Detectado estancamiento en etapa: {self.conversation_stage}")
             
-            # Si estamos atascados en propuesta, forzar avance a cierre
+            # If we're stuck in proposal, force advancement to closing
             if self.conversation_stage == "propuesta":
                 return True
             
-            # Si estamos atascados en cierre, iniciar secuencia de finalización
+            # If we're stuck in closing, start ending sequence
             if self.conversation_stage == "cierre":
                 self.start_ending_sequence()
                 return False
         
-        # Criterios optimizados para cada etapa
+        # Optimized criteria for each stage
         if self.conversation_stage == "introduccion":
-            # Avanzar si tenemos nombre y empresa O si llevamos 3+ mensajes
+            # Advance if we have name and company OR after 3+ messages
             has_basic_info = bool(self.lead_info.get("nombre") and self.lead_info.get("empresa"))
             return has_basic_info or self.stage_message_count >= 3
             
         elif self.conversation_stage == "identificacion_necesidades":
-            # Avanzar si tenemos alguna necesidad identificada O si llevamos 4+ mensajes
+            # Advance if we have any identified need OR after 4+ messages
             has_needs = bool(self.lead_info.get("necesidades") or self.lead_info.get("punto_dolor"))
             return has_needs or self.stage_message_count >= 4
             
         elif self.conversation_stage == "calificacion":
-            # Avanzar si tenemos presupuesto O plazo O si llevamos 3+ mensajes
+            # Advance if we have budget OR timeframe OR after 3+ messages
             has_qualification = bool(self.lead_info.get("presupuesto") or self.lead_info.get("plazo"))
             return has_qualification or self.stage_message_count >= 3
             
         elif self.conversation_stage == "propuesta":
-            # Detectar respuestas cortas del usuario que indiquen interés
+            # Detect short user responses indicating interest
             user_brief_interest = False
             if len(self.message_history) >= 1 and self.message_history[-1]["role"] == "user":
                 last_user_msg = self.message_history[-1]["content"].lower()
-                # Detectar respuestas cortas de aceptación
+                # Detect short acceptance responses
                 if len(last_user_msg.split()) <= 10 and any(term in last_user_msg for term in 
                                                         ["ok", "bien", "me gusta", "entiendo", "perfecto", 
                                                          "estoy interesado", "adelante", "me parece"]):
                     user_brief_interest = True
             
-            # Avanzar después de 3 mensajes o si el usuario muestra interés explícito
+            # Advance after 3 messages or if the user shows explicit interest
             return self.propuesta_message_count >= 3 or user_brief_interest
             
         elif self.conversation_stage == "cierre":
-            # Detectar respuestas cortas del usuario que indiquen aceptación
+            # Detect short user responses indicating acceptance
             user_acceptance = False
             if len(self.message_history) >= 1 and self.message_history[-1]["role"] == "user":
                 last_user_msg = self.message_history[-1]["content"].lower()
@@ -331,9 +331,9 @@ class ConversationOrchestrator:
                                                          "me parece bien", "excelente", "adelante"]):
                     user_acceptance = True
             
-            # En cierre, iniciar despedida después de 3 mensajes o aceptación clara
+            # In closing, start farewell after 3 messages or clear acceptance
             if self.cierre_message_count >= 3 or user_acceptance:
-                # No avanzamos de etapa, sino que iniciamos secuencia de finalización
+                # We don't advance stage, but start ending sequence
                 self.start_ending_sequence()
                 return False
         
@@ -341,33 +341,33 @@ class ConversationOrchestrator:
     
     def _should_end_conversation(self, user_input: str, response: str) -> bool:
         """
-        Determina si la conversación debe finalizar basado en la respuesta del asistente.
+        Determine if the conversation should end based on the assistant's response.
         
         Args:
-            user_input (str): Último mensaje del usuario
-            response (str): Respuesta generada por el asistente
+            user_input (str): Last user message
+            response (str): Response generated by the assistant
             
         Returns:
-            bool: True si la conversación debe finalizar
+            bool: True if the conversation should end
         """
-        # Si ya estamos en proceso de finalización, verificar si la respuesta contiene
-        # la frase clave de despedida
+        # If we're already in the ending process, check if the response contains
+        # the key farewell phrase
         if self.conversation_ending:
             self.closing_message_count += 1
             
-            # Verificar si la respuesta contiene la frase de despedida
+            # Check if the response contains the farewell phrase
             if "¡Hasta pronto! Ha sido un placer ayudarte hoy." in response:
                 self.conversation_ended = True
                 logger.info("Detectada frase clave de finalización")
                 return True
                 
-            # Si llevamos 2+ mensajes de cierre, forzar el fin
+            # If we have 2+ closing messages, force the end
             if self.closing_message_count >= 2:
                 self.conversation_ended = True
                 logger.info("Forzando finalización después de 2+ mensajes de cierre")
                 return True
         
-        # Detectar señales en el mensaje del usuario que indiquen deseo de finalizar
+        # Detect signals in the user's message indicating a desire to end
         end_indicators = [
             "gracias por tu ayuda",
             "muchas gracias",
@@ -390,18 +390,18 @@ class ConversationOrchestrator:
     
     def _extract_direct_info(self, user_input: str) -> Dict[str, Any]:
         """
-        Extrae información directamente del mensaje del usuario usando patrones
-        para reducir llamadas al LLM.
+        Extract information directly from the user's message using patterns
+        to reduce calls to the LLM.
         
         Args:
-            user_input (str): Mensaje del usuario
+            user_input (str): User message
             
         Returns:
-            Dict[str, Any]: Información extraída
+            Dict[str, Any]: Extracted information
         """
         extracted = {}
         
-        # Patrones para extracción rápida (regex)
+        # Patterns for quick extraction (regex)
         patterns = {
             "nombre": r"(?:me llamo|soy|nombre es)[:\s]+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ\s]+?)[\.,]",
             "empresa": r"(?:trabajo en|de la empresa|compañía|nuestra empresa es)[:\s]+([A-ZÁÉÍÓÚÜÑa-záéíóúüñ\s&\.,]+?)[\.,]",
@@ -421,23 +421,23 @@ class ConversationOrchestrator:
     
     def process_message(self, user_input: str) -> Dict[str, Any]:
         """
-        Procesa un mensaje del usuario y genera una respuesta optimizada.
+        Process a user message and generate an optimized response.
         
         Args:
-            user_input (str): Mensaje del usuario
+            user_input (str): User message
             
         Returns:
-            Dict[str, Any]: Respuesta y metadatos
+            Dict[str, Any]: Response and metadata
         """
-        # Añadir mensaje al historial
+        # Add message to history
         self.message_history.append({"role": "user", "content": user_input})
         
-        # Extraer información directa (sin llamada al LLM)
+        # Extract direct information (without LLM call)
         direct_extraction = self._extract_direct_info(user_input)
         if direct_extraction:
             self.lead_info.update(direct_extraction)
         
-        # Construir contexto para el prompt
+        # Build context for the prompt
         logger.debug(f"Procesando mensaje en etapa: {self.conversation_stage}")
         context = f"""
         Información del lead: {self.lead_info}
@@ -446,59 +446,59 @@ class ConversationOrchestrator:
         {self.get_stage_prompt()}
         """
         
-        # Optimización: Usar sólo los últimos mensajes para el contexto inmediato
+        # Optimization: Use only the last messages for immediate context
         recent_history = self.message_history[-8:] if len(self.message_history) > 8 else self.message_history
         formatted_history = [{"role": msg["role"], "content": msg["content"]} for msg in recent_history]
         
-        # Generar respuesta
+        # Generate response
         start_time = time.time()
         response = self.llm.generate_with_history(formatted_history, context)
         generation_time = time.time() - start_time
         
-        # Añadir respuesta al historial
+        # Add response to history
         self.message_history.append({"role": "assistant", "content": response})
         
-        # Guardar respuesta para detección de patrones repetitivos
+        # Save response for repetitive pattern detection
         self.last_responses.append(response)
-        if len(self.last_responses) > 5:  # Mantener solo las últimas 5 respuestas
+        if len(self.last_responses) > 5:  # Keep only the last 5 responses
             self.last_responses.pop(0)
         
-        # Comprobar si la conversación debe finalizar
+        # Check if the conversation should end
         should_end = self._should_end_conversation(user_input, response)
         
-        # Extraer información del lead con throttling
+        # Extract lead information with throttling
         current_time = time.time()
         extracted_info = {}
         
-        # Solo hacer extracción completa si:
-        # 1. No estamos en fase de despedida
-        # 2. Han pasado al menos 2 segundos desde la última extracción
-        # 3. Estamos en una etapa donde es prioritario extraer información
-        # 4. No hemos extraído toda la información esencial para esta etapa
+        # Only do full extraction if:
+        # 1. We're not in farewell phase
+        # 2. At least 2 seconds have passed since the last extraction
+        # 3. We're in a stage where extracting information is a priority
+        # 4. We haven't extracted all the essential information for this stage
         if (not self.conversation_ending and
             current_time - self.last_extraction_time > 2 and 
             any(field not in self.lead_info for field in self.essential_fields.get(self.conversation_stage, []))):
             
-            # Optimización: enviar solo los últimos 5 pares de mensajes (10 mensajes)
+            # Optimization: send only the last 5 message pairs (10 messages)
             recent_conversation = "\n".join([
                 f"{'Usuario' if msg['role'] == 'user' else 'Asistente'}: {msg['content']}" 
                 for msg in self.message_history[-10:]
             ])
             
-            # CORRECCIÓN: No pasar el parámetro priority_fields que no está soportado
+            # CORRECTION: Don't pass the priority_fields parameter as it's not supported
             extracted_info = self.llm.extract_info(recent_conversation)
             self.last_extraction_time = current_time
             
-            # Actualizar información del lead con prioridad a la extracción directa
+            # Update lead information with priority to direct extraction
             if extracted_info:
                 self._update_lead_info_safely(extracted_info, direct_extraction)
         
-        # Evaluar si se debe avanzar a la siguiente etapa (solo si no estamos finalizando)
+        # Evaluate if we should advance to the next stage (only if not ending)
         stage_changed = False
         if not self.conversation_ending and self.should_advance_stage():
             stage_changed = self.advance_stage()
         
-        # Incluir información sobre tiempos para análisis de rendimiento
+        # Include timing information for performance analysis
         return {
             "response": response,
             "lead_info": self.lead_info,
@@ -512,28 +512,28 @@ class ConversationOrchestrator:
     
     def _update_lead_info_safely(self, extracted_info: Dict[str, Any], direct_extraction: Dict[str, Any]) -> None:
         """
-        Actualiza la información del lead de manera segura, preservando valores existentes
-        y evitando sobrescribir con valores vacíos o no especificados.
+        Update lead information safely, preserving existing values
+        and avoiding overwriting with empty or unspecified values.
         
         Args:
-            extracted_info (Dict[str, Any]): Información extraída por el LLM
-            direct_extraction (Dict[str, Any]): Información extraída directamente por regex
+            extracted_info (Dict[str, Any]): Information extracted by the LLM
+            direct_extraction (Dict[str, Any]): Information extracted directly by regex
         """
         for key, value in extracted_info.items():
-            # Si la clave ya está en direct_extraction, skip (ya se procesó con prioridad)
+            # If the key is already in direct_extraction, skip (already processed with priority)
             if key in direct_extraction:
                 continue
                 
-            # Comprobar si es un valor significativo
+            # Check if it's a significant value
             is_empty_value = value is None or (isinstance(value, str) and (
                 not value.strip() or 
                 value.lower() in ["no especificado", "desconocido", "n/a", "na", "none", "null", "no proporcionado", "no disponible"]
             ))
             
-            # No sobrescribir valores existentes con valores vacíos
+            # Don't overwrite existing values with empty values
             if key in self.lead_info and is_empty_value:
                 continue
                 
-            # Sólo añadir valores significativos
+            # Only add significant values
             if not is_empty_value:
                 self.lead_info[key] = value

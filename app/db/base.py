@@ -36,9 +36,9 @@ class Database:
             raise
     
     def _init_tables(self) -> None:
-        """Inicializa las tablas necesarias en la base de datos."""
+        """Initializes the necessary tables in the database."""
         try:
-            # Tabla de leads
+            # Leads table
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS leads (
                     id TEXT PRIMARY KEY,
@@ -59,7 +59,7 @@ class Database:
                 )
             ''')
             
-            # Tabla de conversaciones
+            # Conversations table
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id TEXT PRIMARY KEY,
@@ -73,7 +73,7 @@ class Database:
                 )
             ''')
             
-            # Tabla de mensajes
+            # Messages table
             self.cursor.execute('''
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +90,6 @@ class Database:
             self.conn.commit()
             
         except Exception as e:
-            logger.error(f"Error al inicializar tablas: {str(e)}")
+            logger.error(f"Error initializing tables: {str(e)}")
             self.conn.rollback()
             raise

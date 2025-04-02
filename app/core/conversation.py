@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 class ConversationManager:
     """
-    Administrador de conversaciones que integra ASR, LLM y TTS.
+    Conversation manager for managing conversations with users.
+    This class handles the orchestration of conversations, including text and audio processing, and saving conversation data.
     """
     
     def __init__(self, 
@@ -28,14 +29,14 @@ class ConversationManager:
                  lead_repo: Optional[LeadRepository] = None,
                  conversation_repo: Optional[ConversationRepository] = None):
         """
-        Inicializa el administrador de conversaciones.
-        
+        Initializes the conversation manager.
+
         Args:
-            llm (BaseLLM): Modelo de lenguaje
-            asr (WhisperASR, optional): Procesador de reconocimiento de voz
-            tts (TTSProcessor, optional): Procesador de síntesis de voz
-            lead_repo (LeadRepository, optional): Repositorio para guardar datos de leads
-            conversation_repo (ConversationRepository, optional): Repositorio para guardar conversaciones
+            llm (BaseLLM): The language model used for generating responses.
+            asr (WhisperASR, optional): The Automatic Speech Recognition (ASR) processor.
+            tts (TTSProcessor, optional): The Text-to-Speech (TTS) processor.
+            lead_repo (LeadRepository, optional): Repository for storing lead data.
+            conversation_repo (ConversationRepository, optional): Repository for storing conversation data.
         """
         self.llm = llm
         self.asr = asr
@@ -52,13 +53,16 @@ class ConversationManager:
     
     def start_conversation(self, lead_id: Optional[str] = None) -> str:
         """
-        Inicia una nueva conversación.
-        
+        Starts a new conversation.
+
+        This method initializes a new conversation, optionally linking it to an existing lead. 
+        It also sets up the conversation orchestrator and saves the conversation to the database.
+
         Args:
-            lead_id (str, optional): ID del lead si ya existe
-            
+            lead_id (str, optional): The ID of an existing lead, if available.
+
         Returns:
-            str: ID de la conversación
+            str: The ID of the newly created conversation.
         """
         # Crear nueva conversación en el modelo
         conversation = Conversation(lead_id=lead_id)
@@ -100,14 +104,26 @@ class ConversationManager:
     
     def process_text_message(self, conversation_id: str, text: str) -> Dict[str, Any]:
         """
-        Procesa un mensaje de texto del usuario.
-        
+        Processes a text message from the user.
+
+        This method processes a user's text message, generates a response using the orchestrator, 
+        and updates the conversation state. It also saves or updates lead information in the database.
+
         Args:
-            conversation_id (str): ID de la conversación
-            text (str): Mensaje de texto del usuario
-            
+            conversation_id (str): The ID of the conversation.
+            text (str): The user's text message.
+
         Returns:
-            Dict[str, Any]: Respuesta y metadatos
+            Dict[str, Any]: A dictionary containing:
+                - **conversation_id** (str): The ID of the conversation.
+                - **user_message** (str): The user's original message.
+                - **assistant_response** (str): The assistant's response message.
+                - **audio_response** (bytes, optional): The audio version of the assistant's response (if TTS is enabled).
+                - **lead_info** (dict, optional): Updated lead information extracted from the conversation.
+                - **stage** (str, optional): The current stage of the conversation.
+                - **lead_id** (str, optional): The ID of the associated lead.
+                - **conversation_ending** (bool): Whether the conversation is nearing its end.
+                - **conversation_ended** (bool): Whether the conversation has ended.
         """
         if conversation_id not in self.active_conversations:
             # Intentar cargar la conversación desde el repositorio
@@ -115,7 +131,6 @@ class ConversationManager:
             if not conversation:
                 raise ValueError(f"Conversación no encontrada: {conversation_id}")
             
-            # Recrear el orquestador
             initial_context = {}
             if conversation.lead_id:
                 lead = self.lead_repo.get_lead(conversation.lead_id)
@@ -124,7 +139,6 @@ class ConversationManager:
             
             orchestrator = ConversationOrchestrator(self.llm, initial_context)
             
-            # Recuperar historial de mensajes para el contexto
             for msg in conversation.messages:
                 if msg.role == "user":
                     orchestrator.process_message(msg.content)
@@ -134,51 +148,38 @@ class ConversationManager:
                 "conversation": conversation
             }
         
-        # Obtener datos de la conversación
         conversation_data = self.active_conversations[conversation_id]
         orchestrator = conversation_data["orchestrator"]
         conversation = conversation_data["conversation"]
         
-        # Registrar mensaje del usuario
         conversation.add_message("user", text)
         
-        # Procesar mensaje con el orquestador
         result = orchestrator.process_message(text)
         
-        # Registrar respuesta del asistente
         conversation.add_message("assistant", result["response"])
         
-        # Actualizar información extraída del lead en la conversación
         if result.get("lead_info"):
             conversation.lead_info_extracted.update(result.get("lead_info", {}))
         
-        # Guardar o actualizar información del lead
         lead_id = conversation.lead_id
         if self.lead_repo and result.get("lead_info"):
             if lead_id:
-                # Actualizar lead existente
                 self.lead_repo.update_lead(lead_id, result["lead_info"])
-                # Actualizar etapa de conversación
                 if result.get("stage"):
                     self.lead_repo.update_lead(lead_id, {"conversation_stage": result["stage"]})
             else:
-                # Crear nuevo lead
                 lead = Lead()
                 lead.update(result["lead_info"])
                 lead.conversation_stage = result.get("stage", "introduccion")
                 
-                # Guardar lead
                 lead_id = self.lead_repo.save_lead(lead)
                 
-                # Actualizar referencia en la conversación
                 conversation.lead_id = lead_id
         
-        # Generar audio si hay TTS disponible
         audio_response = None
         if self.tts:
             try:
                 audio_response = self.tts.synthesize(result["response"])
-                # Guardar archivo de audio
                 audio_path = self._save_audio_file(audio_response, conversation_id, "assistant")
             except Exception as e:
                 logger.error(f"Error al generar audio: {str(e)}")
@@ -204,74 +205,38 @@ class ConversationManager:
             "conversation_ended": result.get("conversation_ended", False)
         }
 
-    def _finalize_conversation(self, conversation, conversation_id: str) -> None:
-        """
-        Finaliza una conversación, genera un resumen y actualiza el estado.
-        
-        Args:
-            conversation: Objeto de conversación
-            conversation_id (str): ID de la conversación
-        """
-        # Marcar como finalizada
-        conversation.end_conversation()
-        
-        # Generar resumen
-        try:
-            # Construir contexto para el resumen
-            conversation_text = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation.messages])
-            
-            # Prompt mejorado para generar resumen más estructurado
-            prompt = f"""
-            Por favor, genera un resumen estructurado de la siguiente conversación entre un asistente y un usuario.
-            
-            Incluye:
-            1. Puntos clave identificados
-            2. Información del lead (nombre, empresa, cargo si se mencionó)
-            3. Necesidades específicas identificadas
-            4. Puntos de dolor mencionados
-            5. Información sobre presupuesto o plazos si se mencionaron
-            6. Objeciones o preocupaciones expresadas
-            7. Siguiente paso acordado
-            
-            Formato el resumen en secciones claras para facilitar su lectura.
-            
-            Conversación:
-            {conversation_text}
-            
-            Resumen:
-            """
-            
-            # Generar resumen
-            summary = self.llm.generate(prompt)
-            conversation.summary = summary
-            logger.info(f"Resumen generado para conversación {conversation_id}")
-        except Exception as e:
-            logger.error(f"Error al generar resumen: {str(e)}")
-            conversation.summary = "Error al generar resumen automático."
-        
-        # Eliminar de conversaciones activas
-        if conversation_id in self.active_conversations:
-            del self.active_conversations[conversation_id]
 
-    
     def process_audio_message(self, conversation_id: str, audio_data: bytes) -> Dict[str, Any]:
         """
-        Procesa un mensaje de audio del usuario.
-        
+        Processes an audio message from the user.
+
+        This method handles the transcription of an audio message using the ASR (Automatic Speech Recognition) system.
+        It updates the conversation state and processes the transcribed text as a regular text message.
+
         Args:
-            conversation_id (str): ID de la conversación
-            audio_data (bytes): Datos de audio del mensaje del usuario
-            
+            conversation_id (str): The ID of the conversation.
+            audio_data (bytes): The audio data of the user's message.
+
         Returns:
-            Dict[str, Any]: Respuesta y metadatos
+            Dict[str, Any]: A dictionary containing:
+                - **conversation_id** (str): The ID of the conversation.
+                - **transcription** (dict): The transcription result, including the transcribed text and metadata.
+                - **assistant_response** (str): The assistant's response message.
+                - **audio_response** (bytes, optional): The audio version of the assistant's response (if TTS is enabled).
+                - **lead_info** (dict, optional): Updated lead information extracted from the conversation.
+                - **stage** (str, optional): The current stage of the conversation.
+                - **lead_id** (str, optional): The ID of the associated lead.
+                - **conversation_ending** (bool): Whether the conversation is nearing its end.
+                - **conversation_ended** (bool): Whether the conversation has ended.
+
+        Raises:
+            ValueError: If no ASR processor is configured.
         """
         if not self.asr:
             raise ValueError("No hay procesador ASR configurado")
         
-        # Guardar archivo de audio del usuario
         audio_path = self._save_audio_file(audio_data, conversation_id, "user")
         
-        # Transcribir audio a texto
         transcription = self.asr.transcribe(audio_data)
         
         if not transcription.get("success"):
@@ -281,10 +246,8 @@ class ConversationManager:
                 "details": transcription.get("error")
             }
         
-        # Obtener texto transcrito
         text = transcription["text"]
         
-        # Obtener la conversación
         if conversation_id in self.active_conversations:
             conversation = self.active_conversations[conversation_id]["conversation"]
         else:
@@ -292,26 +255,27 @@ class ConversationManager:
             if not conversation:
                 raise ValueError(f"Conversación no encontrada: {conversation_id}")
         
-        # Registrar mensaje de audio con su transcripción
         conversation.add_message("user", text, audio_path, text)
         
-        # Procesar el texto transcrito
         result = self.process_text_message(conversation_id, text)
         
-        # Añadir información de transcripción
         result["transcription"] = transcription
         
         return result
     
     def end_conversation(self, conversation_id: str) -> bool:
         """
-        Finaliza una conversación.
-        
+        Ends a conversation.
+
+        This method finalizes a conversation by marking it as ended, generating a structured summary 
+        using the language model (if available), and saving the updated conversation to the database. 
+        It also removes the conversation from the list of active conversations.
+
         Args:
-            conversation_id (str): ID de la conversación
-            
+            conversation_id (str): The ID of the conversation to be ended.
+
         Returns:
-            bool: True si la conversación se finalizó correctamente
+            bool: `True` if the conversation was successfully finalized, `False` otherwise.
         """
         if conversation_id not in self.active_conversations:
             # Intentar cargar del repositorio
@@ -321,16 +285,12 @@ class ConversationManager:
         else:
             conversation = self.active_conversations[conversation_id]["conversation"]
         
-        # Marcar como finalizada
         conversation.end_conversation()
         
-        # Generar resumen si se desea
         if self.llm:
             try:
-                # Construir contexto para el resumen
                 conversation_text = "\n".join([f"{msg.role}: {msg.content}" for msg in conversation.messages])
                 
-                # Prompt para generar resumen
                 prompt = f"""
                 Por favor, genera un resumen estructurado de la siguiente conversación entre un asistente y un usuario.
                 
@@ -351,16 +311,13 @@ class ConversationManager:
                 Resumen:
                 """
                 
-                # Generar resumen
                 summary = self.llm.generate(prompt)
                 conversation.summary = summary
             except Exception as e:
                 logger.error(f"Error al generar resumen: {str(e)}")
         
-        # Guardar conversación actualizada
         self.conversation_repo.save_conversation(conversation)
         
-        # Eliminar de conversaciones activas
         if conversation_id in self.active_conversations:
             del self.active_conversations[conversation_id]
         
@@ -369,13 +326,18 @@ class ConversationManager:
     
     def get_conversation_history(self, conversation_id: str) -> List[Dict[str, Any]]:
         """
-        Obtiene el historial de mensajes de una conversación.
-        
+        Retrieves the message history of a conversation.
+
+        This method fetches all messages exchanged in a conversation, including both user and assistant messages.
+
         Args:
-            conversation_id (str): ID de la conversación
-            
+            conversation_id (str): The ID of the conversation.
+
         Returns:
-            List[Dict[str, Any]]: Lista de mensajes
+            List[Dict[str, Any]]: A list of messages, where each message is represented as a dictionary containing:
+                - **role** (str): The role of the sender (e.g., "user" or "assistant").
+                - **content** (str): The content of the message.
+                - **timestamp** (datetime): The timestamp of when the message was sent.
         """
         if conversation_id in self.active_conversations:
             conversation = self.active_conversations[conversation_id]["conversation"]
@@ -388,15 +350,22 @@ class ConversationManager:
     
     def get_lead_info(self, conversation_id: str) -> Dict[str, Any]:
         """
-        Obtiene la información extraída del lead en una conversación.
-        
-        Args:
-            conversation_id (str): ID de la conversación
-            
-        Returns:
-            Dict[str, Any]: Información del lead
-        """
-        # Primero intentar obtener de la conversación activa
+            Retrieves the extracted lead information from a conversation.
+
+            This method fetches the lead information associated with a conversation, either from the active conversation
+            or from the database. If no lead is associated, it returns the extracted lead information from the conversation.
+
+            Args:
+                conversation_id (str): The ID of the conversation.
+
+            Returns:
+                Dict[str, Any]: A dictionary containing the lead information, including:
+                    - **name** (str, optional): The name of the lead.
+                    - **company** (str, optional): The company of the lead.
+                    - **position** (str, optional): The position or role of the lead.
+                    - **contact_info** (dict, optional): Contact details such as email or phone number.
+                    - **other_details** (dict, optional): Any additional information extracted during the conversation.
+            """
         if conversation_id in self.active_conversations:
             conversation = self.active_conversations[conversation_id]["conversation"]
         else:
@@ -404,26 +373,27 @@ class ConversationManager:
             if not conversation:
                 return {}
         
-        # Si la conversación tiene lead_id, obtener información completa
         if conversation.lead_id:
             lead = self.lead_repo.get_lead(conversation.lead_id)
             if lead:
                 return lead.to_dict()
         
-        # Si no, devolver la información extraída en la conversación
         return conversation.lead_info_extracted
     
     def _save_audio_file(self, audio_data: bytes, conversation_id: str, role: str) -> str:
         """
-        Guarda un archivo de audio en disco.
-        
+        Saves an audio file to disk.
+
+        This method saves the provided audio data to a file on disk, associating it with a specific conversation 
+        and role (e.g., "user" or "assistant"). The file is stored in a temporary directory.
+
         Args:
-            audio_data (bytes): Datos de audio
-            conversation_id (str): ID de la conversación
-            role (str): Rol del mensaje ('user' o 'assistant')
-            
+            audio_data (bytes): The audio data to be saved.
+            conversation_id (str): The ID of the conversation associated with the audio file.
+            role (str): The role of the message (e.g., "user" or "assistant").
+
         Returns:
-            str: Ruta al archivo guardado
+            str: The file path of the saved audio file.
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{conversation_id}_{role}_{timestamp}.wav"

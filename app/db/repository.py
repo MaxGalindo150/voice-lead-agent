@@ -14,66 +14,66 @@ from app.db.base import Database
 logger = logging.getLogger(__name__)
 
 class LeadRepository:
-    """Repositorio para gestionar leads (prospectos) en la base de datos."""
+    """Repository for managing leads in the database."""
     
     def __init__(self, db: Optional[Database] = None):
         """
-        Inicializa el repositorio.
+        Initializes the repository.
         
         Args:
-            db: Instancia de la base de datos (opcional)
+            db: Database instance (optional)
         """
         self.db = db or Database()
     
 
     def save_lead(self, lead: Lead) -> str:
         """
-        Guarda un lead en la base de datos.
+        Saves a lead to the database.
         
         Args:
-            lead: Objeto Lead a guardar
+            lead: Lead object to save
             
         Returns:
-            ID del lead guardado
+            ID of the saved lead
         """
         try:
-            lead_dict = lead.to_dict()  # Esto ya debería convertir datetimes a strings
+            lead_dict = lead.to_dict()  # This should already convert datetimes to strings
             
-            # Convertir conversation_ids a formato serializable (JSON)
+            # Convert conversation_ids to serializable format (JSON)
             if 'conversation_ids' in lead_dict:
                 lead_dict['conversation_ids'] = json.dumps(lead_dict['conversation_ids'])
             
-            # Asegurar que todas las fechas están en formato string
+            # Ensure all dates are in string format
             for date_field in ['created_at', 'updated_at']:
                 if date_field in lead_dict and not isinstance(lead_dict[date_field], str):
                     lead_dict[date_field] = lead_dict[date_field].isoformat()
             
-            # Preparar consulta
+            # Prepare query
             columns = ', '.join(lead_dict.keys())
             placeholders = ', '.join(['?' for _ in lead_dict])
             
             query = f"INSERT OR REPLACE INTO leads ({columns}) VALUES ({placeholders})"
             
-            # Ejecutar consulta
+            # Execute query
             self.db.cursor.execute(query, tuple(lead_dict.values()))
             self.db.conn.commit()
             
             return lead.id
             
         except Exception as e:
-            logger.error(f"Error al guardar lead: {str(e)}")
+            logger.error(f"Error saving lead: {str(e)}")
             self.db.conn.rollback()
             raise
     
     def get_lead(self, lead_id: str) -> Optional[Lead]:
         """
-        Obtiene un lead por su ID.
+        Gets a lead by its ID.
         
         Args:
-            lead_id: ID del lead a obtener
+            lead_id: ID of the lead to get
             
         Returns:
-            Lead si existe, None en caso contrario
+            Lead if it exists, None otherwise
         """
         try:
             query = "SELECT * FROM leads WHERE id = ?"
@@ -82,77 +82,77 @@ class LeadRepository:
             row = self.db.cursor.fetchone()
             
             if row:
-                # Convertir a diccionario
+                # Convert to dictionary
                 lead_dict = dict(row)
                 
-                # Deserializar conversation_ids de JSON
+                # Deserialize conversation_ids from JSON
                 if 'conversation_ids' in lead_dict and lead_dict['conversation_ids']:
                     try:
                         lead_dict['conversation_ids'] = json.loads(lead_dict['conversation_ids'])
                     except:
                         lead_dict['conversation_ids'] = []
                 
-                # Crear objeto Lead
+                # Create Lead object
                 return Lead.from_dict(lead_dict)
             
             return None
             
         except Exception as e:
-            logger.error(f"Error al obtener lead: {str(e)}")
+            logger.error(f"Error getting lead: {str(e)}")
             return None
     
     def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> bool:
         """
-        Actualiza un lead existente.
+        Updates an existing lead.
         
         Args:
-            lead_id: ID del lead a actualizar
-            updates: Diccionario con campos a actualizar
+            lead_id: ID of the lead to update
+            updates: Dictionary with fields to update
             
         Returns:
-            True si se actualizó correctamente, False en caso contrario
+            True if updated successfully, False otherwise
         """
         try:
-            # Verificar que el lead existe
+            # Verify the lead exists
             lead = self.get_lead(lead_id)
             if not lead:
                 return False
             
-            # Si 'updated_at' está en updates y es string, convertirlo a datetime
+            # If 'updated_at' is in updates and is a string, convert it to datetime
             if 'updated_at' in updates and isinstance(updates['updated_at'], str):
                 try:
                     updates['updated_at'] = datetime.fromisoformat(updates['updated_at'])
                 except ValueError:
-                    # Si no se puede convertir, usar la fecha actual
+                    # If it can't be converted, use current date
                     updates['updated_at'] = datetime.now()
             
-            # Si 'created_at' está en updates y es string, convertirlo a datetime
+            # If 'created_at' is in updates and is a string, convert it to datetime
             if 'created_at' in updates and isinstance(updates['created_at'], str):
                 try:
                     updates['created_at'] = datetime.fromisoformat(updates['created_at'])
                 except ValueError:
-                    # Si no se puede convertir, dejar el valor original
+                    # If it can't be converted, leave the original value
                     updates.pop('created_at')
             
-            # Actualizar campos
+            # Update fields
             lead.update(updates)
             
-            # Guardar cambios
+            # Save changes
             self.save_lead(lead)
             
             return True
         
         except Exception as e:
-            logger.error(f"Error al actualizar lead: {str(e)}")
+            logger.error(f"Error updating lead: {str(e)}")
             self.db.conn.rollback()
             return False
     
     def get_all_leads(self) -> List[Lead]:
         """
-        Obtiene todos los leads.
+        Gets all leads.
         
         Returns:
-            Lista de todos los leads
+            List of all leads
         """
         try:
             query = "SELECT * FROM leads ORDER BY updated_at DESC"
@@ -160,7 +160,7 @@ class LeadRepository:
             self.db.cursor.execute(query)
             rows = self.db.cursor.fetchall()
             
-            # Convertir cada fila a un objeto Lead
+            # Convert each row to a Lead object
             leads = []
             for row in rows:
                 lead_dict = dict(row)
@@ -169,18 +169,18 @@ class LeadRepository:
             return leads
             
         except Exception as e:
-            logger.error(f"Error al obtener todos los leads: {str(e)}")
+            logger.error(f"Error getting all leads: {str(e)}")
             return []
     
     def delete_lead(self, lead_id: str) -> bool:
         """
-        Elimina un lead por su ID.
+        Deletes a lead by its ID.
         
         Args:
-            lead_id: ID del lead a eliminar
+            lead_id: ID of the lead to delete
             
         Returns:
-            True si se eliminó correctamente, False en caso contrario
+            True if deleted successfully, False otherwise
         """
         try:
             query = "DELETE FROM leads WHERE id = ?"
@@ -191,35 +191,35 @@ class LeadRepository:
             return self.db.cursor.rowcount > 0
             
         except Exception as e:
-            logger.error(f"Error al eliminar lead: {str(e)}")
+            logger.error(f"Error deleting lead: {str(e)}")
             self.db.conn.rollback()
             return False
         
         
 class ConversationRepository:
-    """Repositorio para gestionar conversaciones en la base de datos."""
+    """Repository for managing conversations in the database."""
     
     def __init__(self, db: Optional[Database] = None):
         """
-        Inicializa el repositorio.
+        Initializes the repository.
         
         Args:
-            db: Instancia de la base de datos (opcional)
+            db: Database instance (optional)
         """
         self.db = db or Database()
     
     def save_conversation(self, conversation: Conversation) -> str:
         """
-        Guarda una conversación en la base de datos.
+        Saves a conversation to the database.
         
         Args:
-            conversation: Objeto Conversation a guardar
+            conversation: Conversation object to save
             
         Returns:
-            ID de la conversación guardada
+            ID of the saved conversation
         """
         try:
-            # Primero guardar la conversación
+            # First save the conversation
             data = {
                 'id': conversation.id,
                 'lead_id': conversation.lead_id,
@@ -243,20 +243,20 @@ class ConversationRepository:
                 else:
                     data['ended_at'] = str(conversation.ended_at)
             
-            # Preparar consulta
+            # Prepare query
             columns = ', '.join(data.keys())
             placeholders = ', '.join(['?' for _ in data])
             
             query = f"INSERT OR REPLACE INTO conversations ({columns}) VALUES ({placeholders})"
             
-            # Ejecutar consulta
+            # Execute query
             self.db.cursor.execute(query, tuple(data.values()))
             
-            # Luego guardar los mensajes
-            # Primero eliminar mensajes existentes para esta conversación
+            # Then save the messages
+            # First delete existing messages for this conversation
             self.db.cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation.id,))
             
-            # Insertar nuevos mensajes
+            # Insert new messages
             for message in conversation.messages:
                 msg_data = {
                     'conversation_id': conversation.id,
@@ -266,7 +266,7 @@ class ConversationRepository:
                     'transcription': message.transcription
                 }
                 
-                    # Manejar timestamp correctamente
+                    # Handle timestamp correctly
                 if isinstance(message.timestamp, datetime):
                     msg_data['timestamp'] = message.timestamp.isoformat()
                 else:
@@ -283,22 +283,22 @@ class ConversationRepository:
             return conversation.id
             
         except Exception as e:
-            logger.error(f"Error al guardar conversación: {str(e)}")
+            logger.error(f"Error saving conversation: {str(e)}")
             self.db.conn.rollback()
             raise
     
     def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
         """
-        Obtiene una conversación por su ID.
+        Gets a conversation by its ID.
         
         Args:
-            conversation_id: ID de la conversación a obtener
+            conversation_id: ID of the conversation to get
             
         Returns:
-            Conversation si existe, None en caso contrario
+            Conversation if it exists, None otherwise
         """
         try:
-            # Obtener datos de la conversación
+            # Get conversation data
             query = "SELECT * FROM conversations WHERE id = ?"
             
             self.db.cursor.execute(query, (conversation_id,))
@@ -307,31 +307,31 @@ class ConversationRepository:
             if not row:
                 return None
             
-            # Convertir a diccionario
+            # Convert to dictionary
             conv_dict = dict(row)
             
-            # Procesar campos específicos
+            # Process specific fields
             if 'lead_info_extracted' in conv_dict and conv_dict['lead_info_extracted']:
                 try:
                     conv_dict['lead_info_extracted'] = json.loads(conv_dict['lead_info_extracted'])
                 except:
                     conv_dict['lead_info_extracted'] = {}
             
-            # Crear objeto Conversation
+            # Create Conversation object
             conversation = Conversation.from_dict(conv_dict)
             
-            # Obtener mensajes de la conversación
+            # Get conversation messages
             msg_query = "SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp"
             
             self.db.cursor.execute(msg_query, (conversation_id,))
             msg_rows = self.db.cursor.fetchall()
             
-            # Añadir mensajes
+            # Add messages
             conversation.messages = []
             for msg_row in msg_rows:
                 try:
                     msg_dict = dict(msg_row)
-                    # Extraer los campos que sí usa Message
+                    # Extract the fields that Message uses
                     filtered_msg = {
                         'role': msg_dict.get('role'),
                         'content': msg_dict.get('content'),
@@ -341,30 +341,30 @@ class ConversationRepository:
                         'id': msg_dict.get('id'),
                         'conversation_id': msg_dict.get('conversation_id')
                     }
-                    # Eliminar None values para evitar problemas con campos requeridos
+                    # Remove None values to avoid issues with required fields
                     filtered_msg = {k: v for k, v in filtered_msg.items() if v is not None}
                     
                     message = Message(**filtered_msg)
                     conversation.messages.append(message)
                 except Exception as e:
-                    logger.error(f"Error al procesar mensaje: {str(e)}, datos: {msg_dict}")
-                    # Continuar con el siguiente mensaje
+                    logger.error(f"Error processing message: {str(e)}, data: {msg_dict}")
+                    # Continue with the next message
             
             return conversation
             
         except Exception as e:
-            logger.error(f"Error al obtener conversación: {str(e)}")
+            logger.error(f"Error getting conversation: {str(e)}")
             return None
     
     def get_conversations_by_lead(self, lead_id: str) -> List[Conversation]:
         """
-        Obtiene todas las conversaciones de un lead.
+        Gets all conversations for a lead.
         
         Args:
-            lead_id: ID del lead
+            lead_id: ID of the lead
             
         Returns:
-            Lista de conversaciones
+            List of conversations
         """
         try:
             query = "SELECT id FROM conversations WHERE lead_id = ? ORDER BY created_at DESC"
@@ -382,24 +382,24 @@ class ConversationRepository:
             return conversations
             
         except Exception as e:
-            logger.error(f"Error al obtener conversaciones por lead: {str(e)}")
+            logger.error(f"Error getting conversations by lead: {str(e)}")
             return []
     
     def delete_conversation(self, conversation_id: str) -> bool:
         """
-        Elimina una conversación por su ID.
+        Deletes a conversation by its ID.
         
         Args:
-            conversation_id: ID de la conversación a eliminar
+            conversation_id: ID of the conversation to delete
             
         Returns:
-            True si se eliminó correctamente, False en caso contrario
+            True if deleted successfully, False otherwise
         """
         try:
-            # Primero eliminar mensajes
+            # First delete messages
             self.db.cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
             
-            # Luego eliminar conversación
+            # Then delete conversation
             query = "DELETE FROM conversations WHERE id = ?"
             
             self.db.cursor.execute(query, (conversation_id,))
@@ -408,16 +408,16 @@ class ConversationRepository:
             return self.db.cursor.rowcount > 0
             
         except Exception as e:
-            logger.error(f"Error al eliminar conversación: {str(e)}")
+            logger.error(f"Error deleting conversation: {str(e)}")
             self.db.conn.rollback()
             return False
     
     def get_all_conversations(self) -> List[Conversation]:
         """
-        Obtiene todas las conversaciones.
+        Gets all conversations.
         
         Returns:
-            Lista de todas las conversaciones
+            List of all conversations
         """
         try:
             query = "SELECT id FROM conversations ORDER BY updated_at DESC"
@@ -435,5 +435,5 @@ class ConversationRepository:
             return conversations
             
         except Exception as e:
-            logger.error(f"Error al obtener todas las conversaciones: {str(e)}")
+            logger.error(f"Error getting all conversations: {str(e)}")
             return []

@@ -5,31 +5,31 @@ from typing import List, Dict, Any, Optional
 from app.core.llm.base import BaseLLM
 from app import config
 
-# Configurar logger
+# Configure logger
 logger = logging.getLogger(__name__)
 
 class OpenAILLM(BaseLLM):
     """
-    Implementación de LLM que utiliza la API de OpenAI.
+    LLM implementation that uses the OpenAI API.
     """
     
     def __init__(self, api_key: str = None, model: str = None, temperature: float = None):
         """
-        Inicializa el LLM de OpenAI.
+        Initialize the OpenAI LLM.
         
         Args:
-            api_key (str, optional): Clave API de OpenAI. Si no se proporciona, se usa la de config.
-            model (str, optional): Modelo a utilizar. Por defecto, el definido en config.
-            temperature (float, optional): Temperatura para la generación. Por defecto, la de config.
+            api_key (str, optional): OpenAI API key. If not provided, the one from config is used.
+            model (str, optional): Model to use. By default, the one defined in config.
+            temperature (float, optional): Temperature for generation. By default, the one from config.
         """
         self.api_key = api_key or config.OPENAI_API_KEY
         self.model = model or config.OPENAI_MODEL
         self.temperature = temperature if temperature is not None else config.OPENAI_TEMPERATURE
         
-        # Cliente de OpenAI
+        # OpenAI client
         self.client = None
         
-        # Prompt del sistema por defecto
+        # Default system prompt
         self.system_prompt = """
         Eres un asistente virtual especializado en ventas llamado LeadBot. 
         Tu objetivo es recopilar información importante de prospectos de manera conversacional y amigable.
@@ -47,43 +47,43 @@ class OpenAILLM(BaseLLM):
         mantén una conversación natural.
         """
         
-        # Inicializar cliente
+        # Initialize client
         self._initialize_client()
     
     def _initialize_client(self):
         """
-        Inicializa el cliente de OpenAI.
+        Initialize the OpenAI client.
         """
         try:
             from openai import OpenAI
             
             if not self.api_key:
-                logger.error("No se ha proporcionado una clave API para OpenAI")
-                raise ValueError("Se requiere una clave API para OpenAI")
+                logger.error("No OpenAI API key provided")
+                raise ValueError("An API key is required for OpenAI")
             
             self.client = OpenAI(api_key=self.api_key)
-            logger.info(f"Cliente OpenAI inicializado para modelo {self.model}")
+            logger.info(f"OpenAI client initialized for model {self.model}")
             
         except ImportError:
-            logger.error("La biblioteca 'openai' no está instalada. Instala con: pip install openai")
+            logger.error("The 'openai' library is not installed. Install with: pip install openai")
             raise
         except Exception as e:
-            logger.error(f"Error al inicializar el cliente OpenAI: {str(e)}")
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
             raise
     
     def generate(self, prompt: str) -> str:
         """
-        Genera una respuesta basada en un prompt simple.
+        Generate a response based on a simple prompt.
         
         Args:
-            prompt (str): El prompt o instrucción para el modelo.
+            prompt (str): The prompt or instruction for the model.
             
         Returns:
-            str: La respuesta generada.
+            str: The generated response.
         """
         if not self.client:
-            logger.error("Cliente OpenAI no inicializado")
-            return "Lo siento, no puedo procesar tu solicitud en este momento."
+            logger.error("OpenAI client not initialized")
+            return "Sorry, I cannot process your request at this time."
         
         try:
             response = self.client.chat.completions.create(
@@ -99,36 +99,36 @@ class OpenAILLM(BaseLLM):
             return response.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"Error al generar respuesta con OpenAI: {str(e)}")
-            return "Lo siento, ocurrió un error al procesar tu solicitud."
+            logger.error(f"Error generating response with OpenAI: {str(e)}")
+            return "Sorry, an error occurred while processing your request."
     
     def generate_with_history(self, history: List[Dict[str, str]], user_input: str) -> str:
         """
-        Genera una respuesta basada en el historial de conversación y la entrada actual.
+        Generate a response based on conversation history and current input.
         
         Args:
-            history (List[Dict]): Historial de mensajes anteriores.
-            user_input (str): Entrada actual del usuario.
+            history (List[Dict]): History of previous messages.
+            user_input (str): Current user input.
             
         Returns:
-            str: La respuesta generada.
+            str: The generated response.
         """
         if not self.client:
-            logger.error("Cliente OpenAI no inicializado")
-            return "Lo siento, no puedo procesar tu solicitud en este momento."
+            logger.error("OpenAI client not initialized")
+            return "Sorry, I cannot process your request at this time."
         
         try:
-            # Convertir historial al formato esperado por OpenAI
+            # Convert history to the format expected by OpenAI
             messages = [{"role": "system", "content": self.system_prompt}]
             
             for msg in history:
                 role = "user" if msg["role"] == "user" else "assistant"
                 messages.append({"role": role, "content": msg["content"]})
             
-            # Añadir la entrada actual del usuario
+            # Add the current user input
             messages.append({"role": "user", "content": user_input})
             
-            # Generar respuesta
+            # Generate response
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -139,25 +139,25 @@ class OpenAILLM(BaseLLM):
             return response.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"Error al generar respuesta con OpenAI: {str(e)}")
-            return "Lo siento, ocurrió un error al procesar tu solicitud."
+            logger.error(f"Error generating response with OpenAI: {str(e)}")
+            return "Sorry, an error occurred while processing your request."
     
     def extract_info(self, conversation_text: str) -> Dict[str, Any]:
         """
-        Extrae información estructurada de una conversación.
+        Extract structured information from a conversation.
         
         Args:
-            conversation_text (str): Texto de la conversación.
+            conversation_text (str): Conversation text.
             
         Returns:
-            Dict[str, Any]: Diccionario con información extraída.
+            Dict[str, Any]: Dictionary with extracted information.
         """
         if not self.client:
-            logger.error("Cliente OpenAI no inicializado")
+            logger.error("OpenAI client not initialized")
             return {}
         
         try:
-            # Crear un prompt específico para extracción de información
+            # Create a specific prompt for information extraction
             extraction_prompt = f"""
             Analiza la siguiente conversación entre un asistente virtual y un prospecto.
             Extrae la siguiente información si está disponible:
@@ -178,34 +178,34 @@ class OpenAILLM(BaseLLM):
             {conversation_text}
             """
             
-            # Solicitar extracción al modelo
+            # Request extraction from the model
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "Eres un asistente que extrae información estructurada de conversaciones."},
                     {"role": "user", "content": extraction_prompt}
                 ],
-                temperature=0.1,  # Temperatura baja para resultados más deterministas
+                temperature=0.1,  # Low temperature for more deterministic results
                 max_tokens=1024
             )
             
             content = response.choices[0].message.content
             
-            # Procesar la respuesta para extraer el JSON
+            # Process the response to extract the JSON
             try:
-                # Eliminar posibles decoradores de código
+                # Remove possible code decorators
                 cleaned_content = content.strip()
                 if cleaned_content.startswith("json"):
                     cleaned_content = cleaned_content.replace("json", "", 1)
                 if cleaned_content.endswith(""):
                     cleaned_content = cleaned_content.rstrip("")
                 
-                # Parsear JSON
+                # Parse JSON
                 result = json.loads(cleaned_content.strip())
                 return result
             except json.JSONDecodeError as e:
-                logger.warning(f"No se pudo parsear el JSON: {str(e)}")
-                # Intento recuperar usando regex como fallback
+                logger.warning(f"Could not parse JSON: {str(e)}")
+                # Try to recover using regex as fallback
                 import re
                 json_match = re.search(r'(\{.*\})', content, re.DOTALL)
                 if json_match:
@@ -216,5 +216,5 @@ class OpenAILLM(BaseLLM):
                 return {}
             
         except Exception as e:
-            logger.error(f"Error al extraer información: {str(e)}")
+            logger.error(f"Error extracting information: {str(e)}")
             return {}

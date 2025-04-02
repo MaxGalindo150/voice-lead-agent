@@ -13,98 +13,6 @@ import threading
 import uuid
 
 
-class StreamlitAudioRecorder:
-    """Adaptador para grabar audio en Streamlit."""
-    
-    def __init__(self):
-        # Inicializar variables
-        self.p = None
-        self.stream = None
-        self.frames = []
-        self.is_recording = False
-        self.stop_event = threading.Event()
-    
-    def start_recording(self):
-        """Inicia la grabación de audio."""
-        if self.is_recording:
-            return
-            
-        self.is_recording = True
-        self.frames = []
-        self.stop_event.clear()
-        
-        # Inicializar PyAudio si no existe
-        if not self.p:
-            self.p = pyaudio.PyAudio()
-            
-        # Crear stream
-        try:
-            self.stream = self.p.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                frames_per_buffer=CHUNK
-            )
-            
-            # Iniciar hilo de grabación
-            self.thread = threading.Thread(target=self._record)
-            self.thread.daemon = True
-            self.thread.start()
-            return True
-        except Exception as e:
-            print(f"Error iniciando grabación: {e}")
-            self.is_recording = False
-            return False
-    
-    def stop_recording(self):
-        """Detiene la grabación de audio."""
-        if not self.is_recording:
-            return
-            
-        self.is_recording = False
-        self.stop_event.set()
-        
-        # Esperar a que el hilo termine
-        if hasattr(self, 'thread') and self.thread.is_alive():
-            self.thread.join(timeout=1)
-            
-        # Cerrar stream
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
-    
-    def _record(self):
-        """Función interna para grabar audio."""
-        try:
-            while self.is_recording and not self.stop_event.is_set():
-                data = self.stream.read(CHUNK, exception_on_overflow=False)
-                self.frames.append(data)
-        except Exception as e:
-            print(f"Error en grabación: {e}")
-        finally:
-            # Asegurar que el stream se cierra
-            if self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
-                self.stream = None
-            self.is_recording = False
-    
-    def get_audio_data(self):
-        """Retorna los datos de audio grabados."""
-        if not self.frames:
-            return None
-        return b''.join(self.frames)
-    
-    def close(self):
-        """Libera recursos."""
-        self.stop_recording()
-        if self.p:
-            self.p.terminate()
-            self.p = None
-
-
 # Configurar logging básico
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -116,6 +24,7 @@ try:
     from app.core.tts import TTSProcessor
     from app.db.repository import LeadRepository
     from app.db.repository import ConversationRepository
+    from app.utils.audio import StreamlitAudioRecorder
 except ImportError:
     # Intentar añadir la raíz del proyecto al path
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
@@ -124,6 +33,8 @@ except ImportError:
     from app.core.asr import WhisperASR
     from app.core.tts import TTSProcessor
     from app.db.repository import LeadRepository
+    from app.db.repository import ConversationRepository
+    from app.utils.audio import StreamlitAudioRecorder
 
 # Configuraciones de audio
 CHUNK = 1024

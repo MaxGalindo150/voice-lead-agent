@@ -1,8 +1,9 @@
-# core/asr.py
 import os
 import tempfile
 import logging
 from typing import Optional, Dict, Any
+import whisper
+
 
 from app import config
 
@@ -10,18 +11,32 @@ logger = logging.getLogger(__name__)
 
 class WhisperASR:
     """
-    Implementación de reconocimiento automático de voz utilizando Whisper localmente.
+    Local implementation of the Whisper ASR system.
     """
     
     def __init__(self, model_size: str = None):
         """
-        Inicializa el sistema ASR de Whisper.
-        
-        Args:
-            model_size (str, optional): Tamaño del modelo Whisper a usar ('tiny', 'base', 'small', 
-                                       'medium', 'large', 'turbo'). Por defecto, el definido en config.
-        """
-        self.model_size = model_size or config.WHISPER_MODEL_SIZE
+            Initializes the Whisper ASR system.
+
+            This method sets up the Whisper Automatic Speech Recognition (ASR) system by loading the specified model size.
+
+            Args:
+                model_size (str, optional): 
+                    The size of the Whisper model to use. Options include:
+                    - 'tiny'
+                    - 'base'
+                    - 'small'
+                    - 'medium'
+                    - 'large'
+                    - 'turbo'
+                    
+                    If not provided, the default value from `config.ASR_MODEL_SIZE` will be used.
+
+            Raises:
+                ImportError: If the `whisper` library is not installed.
+                Exception: If there is an error initializing the Whisper model.
+            """
+        self.model_size = model_size or config.ASR_MODEL_SIZE
         
         # Modelo de Whisper
         self.model = None
@@ -34,8 +49,6 @@ class WhisperASR:
         Inicializa el modelo Whisper localmente.
         """
         try:
-            import whisper
-            
             logger.info(f"Cargando modelo Whisper {self.model_size}...")
             self.model = whisper.load_model(self.model_size)
             logger.info(f"Modelo Whisper {self.model_size} cargado correctamente")
@@ -49,14 +62,20 @@ class WhisperASR:
     
     def transcribe(self, audio_data: bytes, language: str = "es") -> Dict[str, Any]:
         """
-        Transcribe audio a texto utilizando Whisper.
-        
+        Transcribe audio to text using Whisper.
+
         Args:
-            audio_data (bytes): Datos de audio en formato compatible
-            language (str): Código de idioma para la transcripción
-            
+            audio_data (bytes): Audio data in a compatible format.
+            language (str): Language code for transcription (default is "es").
+
         Returns:
-            Dict[str, Any]: Resultado de la transcripción con el texto y metadatos
+            Dict[str, Any]: A dictionary containing the transcription result, including:
+                - **text** (str): The transcribed text.
+                - **model** (str): The Whisper model used.
+                - **language** (str): The language of the transcription.
+                - **segments** (list): Segments of the transcription (if available).
+                - **success** (bool): Whether the transcription was successful.
+                - **error** (str, optional): Error message if the transcription failed.
         """
         if not self.model:
             error_msg = "Modelo Whisper no inicializado"

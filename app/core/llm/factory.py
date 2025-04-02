@@ -5,29 +5,29 @@ from app.core.llm.base import BaseLLM
 from app.core.llm.openai_llm import OpenAILLM
 from app import config
 
-# Configurar logger
+# Configure logger
 logger = logging.getLogger(__name__)
 
 def create_llm(llm_type: Optional[str] = None) -> BaseLLM:
     """
-    Crea una instancia del LLM especificado.
+    Creates an instance of the specified LLM.
     
     Args:
-        llm_type (str, optional): Tipo de LLM a crear. Valores válidos: 'openai', 'mistral', 'auto'.
-                                Si es None, se usa el valor de config.LLM_MODE.
+        llm_type (str, optional): Type of LLM to create. Valid values: 'openai', 'mistral', 'auto'.
+                                If None, the value from config.LLM_MODE is used.
     
     Returns:
-        BaseLLM: Instancia de LLM inicializada.
+        BaseLLM: Initialized LLM instance.
         
     Raises:
-        ValueError: Si el tipo de LLM no es reconocido.
-        Exception: Si ocurre un error en la inicialización.
+        ValueError: If the LLM type is not recognized.
+        Exception: If an error occurs during initialization.
     """
-    # Si no se proporciona tipo, usar el de la configuración
+    # If no type is provided, use the one from configuration
     llm_type = llm_type or config.LLM_MODE
     
     if llm_type == "openai":
-        logger.info("Inicializando LLM de OpenAI")
+        logger.info("Initializing OpenAI LLM")
         return OpenAILLM(
             api_key=config.OPENAI_API_KEY,
             model=config.OPENAI_MODEL,
@@ -35,8 +35,8 @@ def create_llm(llm_type: Optional[str] = None) -> BaseLLM:
         )
     
     elif llm_type == "mistral":
-        logger.info("Inicializando LLM de Mistral (local)")
-        # Importación dinámica para evitar error si no está instalado
+        logger.info("Initializing Mistral LLM (local)")
+        # Dynamic import to avoid error if not installed
         try:
             from app.core.llm.mistral_llm import MistralLLM
             return MistralLLM(
@@ -44,30 +44,30 @@ def create_llm(llm_type: Optional[str] = None) -> BaseLLM:
                 gpu_layers=config.MISTRAL_GPU_LAYERS
             )
         except ImportError:
-            logger.error("Módulo Mistral no disponible. Instala las dependencias necesarias.")
-            raise ImportError("No se pudo importar MistralLLM. Asegúrate de tener ctransformers instalado.")
+            logger.error("Mistral module not available. Install the necessary dependencies.")
+            raise ImportError("Could not import MistralLLM. Make sure you have ctransformers installed.")
     
     elif llm_type == "auto":
-        logger.info("Modo automático: intentando Mistral primero, fallback a OpenAI")
-        # Intentar con Mistral primero
+        logger.info("Automatic mode: trying Mistral first, fallback to OpenAI")
+        # Try Mistral first
         try:
             from app.core.llm.mistral_llm import MistralLLM
             
-            logger.info("Inicializando Mistral...")
+            logger.info("Initializing Mistral...")
             mistral = MistralLLM(
                 model_path=config.MISTRAL_MODEL_PATH,
                 gpu_layers=config.MISTRAL_GPU_LAYERS
             )
             
-            # Verificar que funciona con una prueba simple
-            logger.info("Verificando funcionalidad de Mistral...")
-            test_result = mistral.generate("Hola, prueba de inicialización.")
+            # Verify that it works with a simple test
+            logger.info("Verifying Mistral functionality...")
+            test_result = mistral.generate("Hello, initialization test.")
             
             if test_result:
-                logger.info("Mistral inicializado correctamente")
+                logger.info("Mistral initialized correctly")
                 return mistral
             else:
-                logger.warning("Mistral inicializado pero devolvió respuesta vacía. Usando OpenAI como fallback.")
+                logger.warning("Mistral initialized but returned empty response. Using OpenAI as fallback.")
                 return OpenAILLM(
                     api_key=config.OPENAI_API_KEY,
                     model=config.OPENAI_MODEL,
@@ -75,7 +75,7 @@ def create_llm(llm_type: Optional[str] = None) -> BaseLLM:
                 )
                 
         except (ImportError, Exception) as e:
-            logger.warning(f"No se pudo inicializar Mistral: {str(e)}. Usando OpenAI como fallback.")
+            logger.warning(f"Could not initialize Mistral: {str(e)}. Using OpenAI as fallback.")
             return OpenAILLM(
                 api_key=config.OPENAI_API_KEY,
                 model=config.OPENAI_MODEL,
@@ -83,6 +83,6 @@ def create_llm(llm_type: Optional[str] = None) -> BaseLLM:
             )
     
     else:
-        logger.error(f"Tipo de LLM desconocido: {llm_type}")
-        raise ValueError(f"Tipo de LLM desconocido: {llm_type}. " 
-                         f"Valores válidos: 'openai', 'mistral', 'auto'")
+        logger.error(f"Unknown LLM type: {llm_type}")
+        raise ValueError(f"Unknown LLM type: {llm_type}. " 
+                         f"Valid values: 'openai', 'mistral', 'auto'")

@@ -10,73 +10,73 @@ logger = logging.getLogger(__name__)
 
 class TTSProcessor:
     """
-    Procesador de síntesis de voz (Text-to-Speech) usando Google TTS.
+    Text-to-Speech processor using Google TTS.
     """
     
     def __init__(self, language: str = None, slow: bool = False):
         """
-        Inicializa el procesador TTS con Google TTS.
+        Initialize the TTS processor with Google TTS.
         
         Args:
-            language (str, optional): Código de idioma (ej: 'es', 'en', 'es-es')
-            slow (bool): Si True, habla más lentamente
+            language (str, optional): Language code (e.g.: 'es', 'en', 'es-es')
+            slow (bool): If True, speaks more slowly
         """
         self.language = language or config.TTS_LANGUAGE or 'es'
         self.slow = slow
         
-        # Verificar que la biblioteca está disponible
+        # Verify that the library is available
         self._check_dependencies()
     
     def _check_dependencies(self):
         """
-        Verifica que la biblioteca gTTS esté instalada.
+        Verify that the gTTS library is installed.
         """
         try:
             import gtts
-            logger.info(f"gTTS inicializado con idioma: {self.language}")
+            logger.info(f"gTTS initialized with language: {self.language}")
         except ImportError:
-            logger.error("La biblioteca 'gTTS' no está instalada. Instala con: pip install gtts")
-            raise ImportError("Se requiere la biblioteca 'gTTS'")
+            logger.error("The 'gTTS' library is not installed. Install with: pip install gtts")
+            raise ImportError("The 'gTTS' library is required")
     
     def synthesize(self, text: str) -> bytes:
         """
-        Sintetiza texto a voz.
+        Synthesize text to speech.
         
         Args:
-            text (str): Texto a convertir en voz
+            text (str): Text to convert to speech
             
         Returns:
-            bytes: Datos de audio generados en formato MP3
+            bytes: Generated audio data in MP3 format
         """
-        # Archivo temporal para guardar el audio
+        # Temporary file to save the audio
         temp_file_path = None
         
         try:
             from gtts import gTTS
             
-            # Crear archivo temporal
+            # Create temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_file:
                 temp_file_path = temp_file.name
             
-            # Crear objeto gTTS y guardar en archivo
+            # Create gTTS object and save to file
             tts = gTTS(text=text, lang=self.language, slow=self.slow)
             tts.save(temp_file_path)
             
-            # Leer archivo como bytes
+            # Read file as bytes
             with open(temp_file_path, "rb") as audio_file:
                 audio_data = audio_file.read()
             
-            logger.info(f"Audio generado correctamente: {len(audio_data)} bytes")
+            logger.info(f"Audio generated successfully: {len(audio_data)} bytes")
             return audio_data
             
         except Exception as e:
-            logger.error(f"Error al sintetizar voz: {str(e)}")
+            logger.error(f"Error synthesizing speech: {str(e)}")
             raise
             
         finally:
-            # Limpiar archivo temporal
+            # Clean up temporary file
             if temp_file_path and os.path.exists(temp_file_path):
                 try:
                     os.unlink(temp_file_path)
                 except Exception as e:
-                    logger.warning(f"No se pudo eliminar el archivo temporal: {str(e)}")
+                    logger.warning(f"Could not delete temporary file: {str(e)}")
