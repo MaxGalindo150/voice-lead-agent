@@ -1,5 +1,5 @@
 ConversationOrchestrator - Langchain Integration
-==========================================
+================================================
 
 The ``ConversationOrchestrator`` class provides a structured way to manage conversations with leads using Langchain. It maintains conversation context and guides the flow through different stages of the sales process.
 
@@ -57,7 +57,7 @@ Methods
 .. automethod:: app.core.langchain_integration.ConversationOrchestrator._update_lead_info_safely
 
 Conversation Stages
-------------------
+--------------------
 
 The orchestrator guides the conversation through five distinct stages:
 
@@ -70,7 +70,7 @@ The orchestrator guides the conversation through five distinct stages:
 Each stage has specific goals and essential information to collect before advancing.
 
 Error Handling
---------------
+---------------
 
 The ``ConversationOrchestrator`` includes error handling for:
 
@@ -79,7 +79,7 @@ The ``ConversationOrchestrator`` includes error handling for:
 - Premature conversation endings
 
 Dependencies
-------------
+-------------
 
 The ``ConversationOrchestrator`` class depends on the following:
 
