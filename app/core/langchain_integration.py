@@ -491,9 +491,7 @@ class ConversationOrchestrator:
             
             # Actualizar información del lead con prioridad a la extracción directa
             if extracted_info:
-                for key, value in extracted_info.items():
-                    if key not in direct_extraction:  # La extracción directa tiene prioridad
-                        self.lead_info[key] = value
+                self._update_lead_info_safely(extracted_info, direct_extraction)
         
         # Evaluar si se debe avanzar a la siguiente etapa (solo si no estamos finalizando)
         stage_changed = False
@@ -511,3 +509,31 @@ class ConversationOrchestrator:
             "conversation_ending": self.conversation_ending,
             "conversation_ended": self.conversation_ended
         }
+    
+    def _update_lead_info_safely(self, extracted_info: Dict[str, Any], direct_extraction: Dict[str, Any]) -> None:
+        """
+        Actualiza la información del lead de manera segura, preservando valores existentes
+        y evitando sobrescribir con valores vacíos o no especificados.
+        
+        Args:
+            extracted_info (Dict[str, Any]): Información extraída por el LLM
+            direct_extraction (Dict[str, Any]): Información extraída directamente por regex
+        """
+        for key, value in extracted_info.items():
+            # Si la clave ya está en direct_extraction, skip (ya se procesó con prioridad)
+            if key in direct_extraction:
+                continue
+                
+            # Comprobar si es un valor significativo
+            is_empty_value = value is None or (isinstance(value, str) and (
+                not value.strip() or 
+                value.lower() in ["no especificado", "desconocido", "n/a", "na", "none", "null", "no proporcionado", "no disponible"]
+            ))
+            
+            # No sobrescribir valores existentes con valores vacíos
+            if key in self.lead_info and is_empty_value:
+                continue
+                
+            # Sólo añadir valores significativos
+            if not is_empty_value:
+                self.lead_info[key] = value

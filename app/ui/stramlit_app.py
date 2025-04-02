@@ -17,11 +17,17 @@ st.set_page_config(
 st.sidebar.title("LeadBot")
 st.sidebar.markdown("*AI Voice Agent para Nutrición de Leads*")
 
+if 'page' not in st.session_state:
+    st.session_state.page = "Chat"
+
 # Selector de página
 page = st.sidebar.radio(
     "Navegación",
-    ["Chat", "Leads", "Configuración"]
+    ["Chat", "Leads", "Configuración"],
+    index=["Chat", "Leads", "Configuración"].index(st.session_state.page)
 )
+
+st.session_state.page = page
 
 # Mostrar página seleccionada
 if page == "Chat":

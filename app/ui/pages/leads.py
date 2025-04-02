@@ -260,6 +260,8 @@ def mostrar_detalle_lead():
                     st.session_state.redirect_to_chat = True
                     st.session_state.conversation_id = conv.id
                     st.session_state.lead_id = lead_id
+                    st.session_state.page = "Chat"
+                    st.rerun()
     except Exception as e:
         st.error(f"Error al cargar las conversaciones: {str(e)}")
     

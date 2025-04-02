@@ -187,7 +187,7 @@ class ConversationManager:
         if result.get("conversation_ended", False):
             logger.info(f"Conversación {conversation_id} finalizada por el orquestador")
             # Generar resumen y finalizar
-            self._finalize_conversation(conversation, conversation_id)
+            self.end_conversation(conversation_id)
         
         # Guardar conversación actualizada
         self.conversation_repo.save_conversation(conversation)
@@ -332,8 +332,18 @@ class ConversationManager:
                 
                 # Prompt para generar resumen
                 prompt = f"""
-                Por favor, genera un resumen conciso de la siguiente conversación entre un asistente y un usuario.
-                Incluye los puntos clave discutidos y cualquier información valiosa recopilada.
+                Por favor, genera un resumen estructurado de la siguiente conversación entre un asistente y un usuario.
+                
+                Incluye:
+                1. Puntos clave identificados
+                2. Información del lead (nombre, empresa, cargo si se mencionó)
+                3. Necesidades específicas identificadas
+                4. Puntos de dolor mencionados
+                5. Información sobre presupuesto o plazos si se mencionaron
+                6. Objeciones o preocupaciones expresadas
+                7. Siguiente paso acordado
+                
+                Formato el resumen en secciones claras para facilitar su lectura.
                 
                 Conversación:
                 {conversation_text}

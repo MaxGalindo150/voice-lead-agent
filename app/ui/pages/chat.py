@@ -115,6 +115,7 @@ try:
     from app.core.asr import WhisperASR
     from app.core.tts import TTSProcessor
     from app.db.repository import LeadRepository
+    from app.db.repository import ConversationRepository
 except ImportError:
     # Intentar añadir la raíz del proyecto al path
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
@@ -142,6 +143,7 @@ def init_chat_page():
                 llm=llm, asr=asr, tts=tts
             )
             st.session_state.lead_repo = LeadRepository()
+            st.session_state.conversation_repo = ConversationRepository()
     
     # Inicializar estado de la conversación
     if 'conversation_id' not in st.session_state:
@@ -161,6 +163,35 @@ def init_chat_page():
     if st.session_state.recording and st.session_state.audio_recorder.stream is None:
         st.session_state.recording = False
 
+    if 'redirect_to_chat' in st.session_state and st.session_state.redirect_to_chat:
+        # Cargar la conversación existente
+        if st.session_state.conversation_id:
+            try:
+                # Obtener la conversación y sus mensajes
+                conversation = st.session_state.conversation_repo.get_conversation(
+                    st.session_state.conversation_id
+                )
+                
+                # Si hay mensajes existentes, cargarlos
+                if conversation and hasattr(conversation, 'messages'):
+                    st.session_state.messages = []
+                    for msg in conversation.messages:
+                        st.session_state.messages.append({
+                            "role": msg.role,
+                            "content": msg.content
+                        })
+                
+                # Si hay información de lead, cargarla
+                if 'lead_id' in st.session_state and st.session_state.lead_id:
+                    lead = st.session_state.lead_repo.get_lead(st.session_state.lead_id)
+                    if lead:
+                        st.session_state.lead_info = lead.__dict__
+            except Exception as e:
+                st.error(f"Error al cargar la conversación: {str(e)}")
+            
+        # Limpiar el estado de redirección para evitar recargas
+        st.session_state.redirect_to_chat = False
+    
 def send_text_message():
     """Envía un mensaje de texto al asistente"""
     if st.session_state.user_input and st.session_state.user_input.strip():

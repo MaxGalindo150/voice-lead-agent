@@ -223,14 +223,25 @@ class ConversationRepository:
             data = {
                 'id': conversation.id,
                 'lead_id': conversation.lead_id,
-                'created_at': conversation.created_at.isoformat(),
-                'updated_at': conversation.updated_at.isoformat(),
                 'summary': conversation.summary,
                 'lead_info_extracted': json.dumps(conversation.lead_info_extracted)
             }
             
+            if isinstance(conversation.created_at, datetime):
+                data['created_at'] = conversation.created_at.isoformat()
+            else:
+                data['created_at'] = str(conversation.created_at)
+                
+            if isinstance(conversation.updated_at, datetime):
+                data['updated_at'] = conversation.updated_at.isoformat()
+            else:
+                data['updated_at'] = str(conversation.updated_at)
+            
             if conversation.ended_at:
-                data['ended_at'] = conversation.ended_at.isoformat()
+                if isinstance(conversation.ended_at, datetime):
+                    data['ended_at'] = conversation.ended_at.isoformat()
+                else:
+                    data['ended_at'] = str(conversation.ended_at)
             
             # Preparar consulta
             columns = ', '.join(data.keys())
@@ -251,10 +262,15 @@ class ConversationRepository:
                     'conversation_id': conversation.id,
                     'role': message.role,
                     'content': message.content,
-                    'timestamp': message.timestamp.isoformat(),
                     'audio_file_path': message.audio_file_path,
                     'transcription': message.transcription
                 }
+                
+                    # Manejar timestamp correctamente
+                if isinstance(message.timestamp, datetime):
+                    msg_data['timestamp'] = message.timestamp.isoformat()
+                else:
+                    msg_data['timestamp'] = str(message.timestamp)
                 
                 msg_columns = ', '.join(msg_data.keys())
                 msg_placeholders = ', '.join(['?' for _ in msg_data])
