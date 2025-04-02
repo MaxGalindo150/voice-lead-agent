@@ -110,7 +110,5 @@ triton==3.2.0
 typing-inspection==0.4.0
 typing_extensions==4.13.0
 tzdata==2025.2
-urllib3==2.3.0
--e git+ssh://git@github.com/MaxGalindo150/voice-lead-agent.git@69d0593a92f85414368f09222efe2133c75a7a23#egg=voice_lead_agent
 watchdog==6.0.0
 zstandard==0.23.0
