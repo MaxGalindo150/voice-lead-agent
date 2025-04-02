@@ -74,7 +74,7 @@ class ConversationOrchestrator:
         """
         # Priority missing fields for this stage
         missing_fields = [field for field in self.essential_fields.get(self.conversation_stage, []) 
-                          if not self.lead_info.get(field)]
+                        if not self.lead_info.get(field)]
         
         # If we're ending the conversation, ignore missing fields
         if self.conversation_ending:
@@ -96,6 +96,17 @@ class ConversationOrchestrator:
             elif self.conversation_stage == "cierre":
                 self.conversation_ending = True
                 return self._get_ending_prompt()
+        
+        # Revisado: Detectar respuestas afirmativas para personalizar el prompt de cierre
+        user_acceptance_detected = False
+        if self.conversation_stage == "cierre" and len(self.message_history) >= 1:
+            if self.message_history[-1]["role"] == "user":
+                last_user_msg = self.message_history[-1]["content"].lower()
+                acceptance_indicators = ["sí", "si", "claro", "de acuerdo", "ok", "perfecto", "excelente", 
+                                        "podemos", "me interesa", "quiero", "está bien", "hagámoslo"]
+                
+                if any(indicator in last_user_msg for indicator in acceptance_indicators):
+                    user_acceptance_detected = True
         
         prompts = {
             "introduccion": f"""
@@ -142,26 +153,47 @@ class ConversationOrchestrator:
             ver una demostración o hablar con un especialista.
             
             Limita tus respuestas a 2-3 oraciones para presentar ideas concisas y claras.
-            """,
-            
-            "cierre": f"""
-            Estás cerrando la conversación con {self.lead_info.get('nombre', 'el prospecto')}.
-            
-            Este es el mensaje #{self.cierre_message_count + 1} en la etapa de cierre.
-            
-            {"Aún necesitas confirmar el interés en un siguiente paso." if missing_fields else "Ya has confirmado su interés en seguir adelante."}
-            
-            Resume BREVEMENTE los puntos clave y sugiere UN paso concreto, como una demostración o reunión.
-            Pregunta claramente si desea proceder con este siguiente paso.
-            
-            IMPORTANTE: Si este es tu tercer mensaje en cierre o si el usuario ha respondido brevemente
-            indicando acuerdo, debes prepararte para finalizar la conversación formalmente. Propón un
-            horario específico o pregunta por su disponibilidad para agendar la siguiente interacción. Después,
-            prepara un mensaje de despedida claro y profesional.
-            
-            Mantén un tono cordial y seguro. Limita tu respuesta a 2-3 oraciones.
             """
         }
+        
+        # Prompt mejorado para la etapa de cierre con diferentes comportamientos
+        if self.conversation_stage == "cierre":
+            # Usuario ya ha mostrado interés explícito
+            if user_acceptance_detected:
+                return f"""
+                IMPORTANTE: El usuario ya ha aceptado la propuesta. NO repitas la pregunta sobre si está interesado.
+                
+                El prospecto {self.lead_info.get('nombre', '')} ha ACEPTADO tu propuesta.
+                
+                Debes ahora:
+                1. Pedir que escriba su email o número de teléfono
+                2. Confirmar brevemente que has entendido su aceptación
+                3. Proporcionar detalles específicos sobre el siguiente paso (cuándo, cómo, quién contactará)
+                4. Preguntar por su disponibilidad o preferencia de horario CONCRETA
+                
+                Por ejemplo: "Perfecto, {self.lead_info.get('nombre', '')}. Nuestro especialista podría contactarte 
+                este jueves o viernes. ¿Tienes preferencia de horario para la llamada?"
+                
+                Mantén un tono cordial pero DIRECTO. Limita tu respuesta a 2-3 oraciones máximo.
+                """
+            # Usuario no ha mostrado interés explícito aún
+            else:
+                return f"""
+                Estás cerrando la conversación con {self.lead_info.get('nombre', 'el prospecto')}.
+                
+                Este es el mensaje #{self.cierre_message_count + 1} en la etapa de cierre.
+                
+                {"Aún necesitas confirmar el interés en un siguiente paso." if missing_fields else "Ya has confirmado su interés en seguir adelante."}
+                
+                Resume BREVEMENTE los puntos clave y sugiere UN paso concreto, como una demostración o reunión.
+                Pregunta claramente si desea proceder con este siguiente paso.
+                
+                IMPORTANTE: Si este es tu segundo mensaje en cierre y el usuario no ha respondido claramente,
+                haz una pregunta DIRECTA que requiera una respuesta simple: "¿Te gustaría que agendemos
+                una llamada para el próximo [día específico]?"
+                
+                Mantén un tono cordial y seguro. Limita tu respuesta a 2-3 oraciones.
+                """
         
         return prompts.get(self.conversation_stage, prompts["introduccion"])
     
@@ -313,27 +345,40 @@ class ConversationOrchestrator:
             if len(self.message_history) >= 1 and self.message_history[-1]["role"] == "user":
                 last_user_msg = self.message_history[-1]["content"].lower()
                 # Detect short acceptance responses
-                if len(last_user_msg.split()) <= 10 and any(term in last_user_msg for term in 
+                if len(last_user_msg.split()) <= 15 and any(term in last_user_msg for term in 
                                                         ["ok", "bien", "me gusta", "entiendo", "perfecto", 
-                                                         "estoy interesado", "adelante", "me parece"]):
+                                                        "interesado", "adelante", "me parece", "sí", "claro", 
+                                                        "de acuerdo", "excelente", "suena", "acepto"]):
                     user_brief_interest = True
             
             # Advance after 3 messages or if the user shows explicit interest
             return self.propuesta_message_count >= 3 or user_brief_interest
             
         elif self.conversation_stage == "cierre":
-            # Detect short user responses indicating acceptance
+            # Detect user responses indicating acceptance - MEJORADO
             user_acceptance = False
             if len(self.message_history) >= 1 and self.message_history[-1]["role"] == "user":
                 last_user_msg = self.message_history[-1]["content"].lower()
-                if len(last_user_msg.split()) <= 10 and any(term in last_user_msg for term in 
-                                                        ["ok", "sí", "claro", "de acuerdo", "perfecto", 
-                                                         "me parece bien", "excelente", "adelante"]):
+                
+                # Ampliado para capturar más palabras y frases de aceptación
+                acceptance_terms = [
+                    "ok", "sí", "si", "claro", "por supuesto", 
+                    "de acuerdo", "perfecto", "me parece bien", 
+                    "excelente", "adelante", "estoy disponible", 
+                    "puedo", "quiero", "suena bien", "está bien",
+                    "vamos", "hagamos", "agenda", "me interesa"
+                ]
+                
+                # Comprobación más robusta: detectar cualquier frase afirmativa
+                if any(term in last_user_msg for term in acceptance_terms):
                     user_acceptance = True
+                    logger.info(f"Detectada aceptación en mensaje del usuario: '{last_user_msg}'")
             
-            # In closing, start farewell after 3 messages or clear acceptance
-            if self.cierre_message_count >= 3 or user_acceptance:
-                # We don't advance stage, but start ending sequence
+            # Si solo hemos mostrado 1 mensaje de cierre y hay aceptación, iniciamos 
+            # inmediatamente la secuencia de despedida
+            if user_acceptance or self.cierre_message_count >= 2:
+                # Iniciamos secuencia de fin sin necesidad de 3 mensajes
+                logger.info(f"Iniciando secuencia de despedida después de aceptación o {self.cierre_message_count} mensajes")
                 self.start_ending_sequence()
                 return False
         
@@ -350,24 +395,38 @@ class ConversationOrchestrator:
         Returns:
             bool: True if the conversation should end
         """
-        # If we're already in the ending process, check if the response contains
-        # the key farewell phrase
+        # Si ya estamos en proceso de finalización, verificar si la respuesta contiene
+        # la frase clave de despedida
         if self.conversation_ending:
             self.closing_message_count += 1
             
-            # Check if the response contains the farewell phrase
+            # Verificar si la respuesta contiene la frase de despedida
             if "¡Hasta pronto! Ha sido un placer ayudarte hoy." in response:
                 self.conversation_ended = True
                 logger.info("Detectada frase clave de finalización")
                 return True
                 
-            # If we have 2+ closing messages, force the end
+            # Si tenemos 2+ mensajes de cierre, forzar el fin
             if self.closing_message_count >= 2:
                 self.conversation_ended = True
                 logger.info("Forzando finalización después de 2+ mensajes de cierre")
                 return True
         
-        # Detect signals in the user's message indicating a desire to end
+        # Si estamos en etapa de cierre y el usuario muestra signos claros de aceptación,
+        # iniciar secuencia de finalización
+        if self.conversation_stage == "cierre" and not self.conversation_ending:
+            acceptance_signals = [
+                "sí", "si", "claro", "me parece bien", "perfecto", 
+                "de acuerdo", "excelente", "ok", "adelante"
+            ]
+            
+            if any(signal in user_input.lower() for signal in acceptance_signals):
+                # Verificar si ya hemos mostrado al menos un mensaje de cierre
+                if self.cierre_message_count >= 1:
+                    logger.info(f"Iniciando secuencia de finalización tras aceptación clara: '{user_input}'")
+                    self.start_ending_sequence()
+        
+        # Detectar señales en el mensaje del usuario que indiquen deseo de finalizar
         end_indicators = [
             "gracias por tu ayuda",
             "muchas gracias",

@@ -113,11 +113,12 @@ def send_text_message():
         if not st.session_state.conversation_id:
             st.session_state.conversation_id = st.session_state.conversation_manager.start_conversation()
         
-        # Añadir mensaje del usuario al historial
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_text
-        })
+        #Añadir mensaje del usuario al historial
+        if not any(msg["content"] == user_text and msg["role"] == "user" for msg in st.session_state.messages):
+            st.session_state.messages.append({
+                "role": "user",
+                "content": user_text
+            })
         
         # Procesar mensaje de texto
         with st.spinner("Procesando mensaje..."):

@@ -3,6 +3,7 @@ import logging
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 import sqlite3
+import time
 
 import json
 
@@ -64,42 +65,56 @@ class LeadRepository:
             logger.error(f"Error saving lead: {str(e)}")
             self.db.conn.rollback()
             raise
-    
-    def get_lead(self, lead_id: str) -> Optional[Lead]:
+
+    def get_lead(self, lead_id: str, max_retries=3) -> Optional[Lead]:
         """
         Gets a lead by its ID.
         
         Args:
             lead_id: ID of the lead to get
+            max_retries: Maximum number of retry attempts for database operations
             
         Returns:
             Lead if it exists, None otherwise
         """
-        try:
-            query = "SELECT * FROM leads WHERE id = ?"
-            
-            self.db.cursor.execute(query, (lead_id,))
-            row = self.db.cursor.fetchone()
-            
-            if row:
-                # Convert to dictionary
-                lead_dict = dict(row)
+        retries = 0
+        while retries < max_retries:
+            try:
+                query = "SELECT * FROM leads WHERE id = ?"
                 
-                # Deserialize conversation_ids from JSON
-                if 'conversation_ids' in lead_dict and lead_dict['conversation_ids']:
-                    try:
-                        lead_dict['conversation_ids'] = json.loads(lead_dict['conversation_ids'])
-                    except:
-                        lead_dict['conversation_ids'] = []
+                self.db.cursor.execute(query, (lead_id,))
+                row = self.db.cursor.fetchone()
                 
-                # Create Lead object
-                return Lead.from_dict(lead_dict)
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting lead: {str(e)}")
-            return None
+                if row:
+                    # Convert to dictionary
+                    lead_dict = dict(row)
+                    
+                    # Deserialize conversation_ids from JSON
+                    if 'conversation_ids' in lead_dict and lead_dict['conversation_ids']:
+                        try:
+                            lead_dict['conversation_ids'] = json.loads(lead_dict['conversation_ids'])
+                        except:
+                            lead_dict['conversation_ids'] = []
+                    
+                    # Create Lead object
+                    return Lead.from_dict(lead_dict)
+                
+                return None
+                
+            except sqlite3.OperationalError as e:
+                if "Recursive use of cursors" in str(e):
+                    retries += 1
+                    logger.warning(f"Recursive cursor use detected, retry {retries}/{max_retries}")
+                    time.sleep(0.1 * retries)  # Incrementar el tiempo de espera con cada reintento
+                else:
+                    logger.error(f"Database error getting lead: {str(e)}")
+                    return None
+            except Exception as e:
+                logger.error(f"Error getting lead: {str(e)}")
+                return None
+        
+        logger.error(f"Failed to get lead after {max_retries} retries due to recursive cursor use")
+        return None
     
     def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> bool:
         """
