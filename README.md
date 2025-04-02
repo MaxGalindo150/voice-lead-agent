@@ -116,6 +116,16 @@ pip install -r requirements.txt
   sudo dnf install python3-devel portaudio-devel python3-pyaudio
   ```
 
+### Documentación
+Para ver la documentacion del proyecto, muevete al directorio `docs` y abre el archivo `index.html` en tu navegador.
+Puedes generar la documentación actualizada ejecutando el siguiente comando:
+
+```bash
+cd docs
+make html
+```
+Esto generará la documentación en el directorio `_build/html`. Abre `index.html` en tu navegador para ver la documentación.
+
 ### Reportar problemas
 
 Si encuentras algún problema no listado aquí, por favor crea un issue en el repositorio con la siguiente información:
