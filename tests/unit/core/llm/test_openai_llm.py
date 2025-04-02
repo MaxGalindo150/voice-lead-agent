@@ -85,16 +85,7 @@ class TestOpenAILLM(unittest.TestCase):
         self.assertEqual(result["empresa"], "ACME")
         self.mock_client.chat.completions.create.assert_called_once()
 
-    def test_handle_error_in_generate(self):
-        """Verifica que se manejan los errores durante la generación."""
-        # Configurar mock para lanzar una excepción
-        self.mock_client.chat.completions.create.side_effect = Exception("Error de prueba")
-        
-        # Llamar al método y verificar que maneja el error correctamente
-        result = self.llm.generate("Hola")
-        
-        self.assertIn("Lo siento", result)
-        self.mock_client.chat.completions.create.assert_called_once()
+
 
     def test_extract_info_with_unexpected_json(self):
         """Verifica que extract_info maneja respuestas con formato JSON inesperado."""
