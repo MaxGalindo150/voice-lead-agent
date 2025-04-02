@@ -86,7 +86,7 @@ pip install -r requirements.txt
 
 - Verifica la configuración en `app/db/base.py`.
 - Asegúrate de que la base de datos está funcionando y es accesible.
-- Para pruebas locales, puedes usar la base de datos en memoria configurando `USE_IN_MEMORY_DB=True` en tu `.env`.
+
 
 ### Problemas específicos para distintos sistemas operativos
 
