@@ -126,6 +126,13 @@ make html
 ```
 Esto generará la documentación en el directorio `_build/html`. Abre `index.html` en tu navegador para ver la documentación.
 
+### Test
+Para ejecutar los tests, asegúrate de que el entorno virtual está activado y ejecuta:
+
+```bash
+pytest tests/unit/
+```
+
 ### Reportar problemas
 
 Si encuentras algún problema no listado aquí, por favor crea un issue en el repositorio con la siguiente información:
