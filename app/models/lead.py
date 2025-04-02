@@ -1,77 +1,68 @@
-# models/lead.py
-from typing import Dict, Any, Optional
+# app/models/lead.py
+from dataclasses import dataclass, field, asdict
+from typing import Dict, List, Optional, Any
 from datetime import datetime
+import uuid
 
+
+@dataclass
 class Lead:
-    """
-    Modelo para representar un lead o prospecto.
-    """
+    """Modelo de datos para representar un lead (prospecto)."""
     
-    def __init__(self, **kwargs):
-        """
-        Inicializa un lead con datos dinámicos.
-        
-        Args:
-            **kwargs: Atributos del lead
-        """
-        self.id = kwargs.get("id")
-        self.nombre = kwargs.get("nombre")
-        self.empresa = kwargs.get("empresa")
-        self.cargo = kwargs.get("cargo")
-        self.email = kwargs.get("email")
-        self.telefono = kwargs.get("telefono")
-        self.necesidades = kwargs.get("necesidades")
-        self.presupuesto = kwargs.get("presupuesto")
-        self.plazo = kwargs.get("plazo")
-        self.conversation_stage = kwargs.get("conversation_stage", "introduccion")
-        self.created_at = kwargs.get("created_at", datetime.now().isoformat())
-        self.last_interaction = kwargs.get("last_interaction", datetime.now().isoformat())
-        
-        # Campos dinámicos adicionales
-        self.additional_data = {}
-        for key, value in kwargs.items():
-            if not hasattr(self, key):
-                self.additional_data[key] = value
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    nombre: Optional[str] = None
+    empresa: Optional[str] = None
+    cargo: Optional[str] = None
+    email: Optional[str] = None
+    telefono: Optional[str] = None
+    
+    # Información de cualificación
+    necesidades: Optional[str] = None
+    presupuesto: Optional[str] = None
+    plazo: Optional[str] = None
+    punto_dolor: Optional[str] = None
+    producto_interes: Optional[str] = None
+    
+    # Etapa de la conversación
+    conversation_stage: str = "introduccion"
+    
+    # Metadatos
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    
+    # Relación con conversaciones
+    conversation_ids: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
-        """
-        Convierte el lead a un diccionario.
-        
-        Returns:
-            Dict[str, Any]: Representación del lead como diccionario
-        """
-        result = {
-            "id": self.id,
-            "nombre": self.nombre,
-            "empresa": self.empresa,
-            "cargo": self.cargo,
-            "email": self.email,
-            "telefono": self.telefono,
-            "necesidades": self.necesidades,
-            "presupuesto": self.presupuesto,
-            "plazo": self.plazo,
-            "conversation_stage": self.conversation_stage,
-            "created_at": self.created_at,
-            "last_interaction": self.last_interaction
-        }
-        
-        # Eliminar campos None
-        result = {k: v for k, v in result.items() if v is not None}
-        
-        # Añadir campos adicionales
-        result.update(self.additional_data)
-        
-        return result
+        """Convierte el objeto Lead a un diccionario."""
+        data = asdict(self)
+        # Convertir datetimes a strings ISO para serialización
+        data['created_at'] = self.created_at.isoformat()
+        data['updated_at'] = self.updated_at.isoformat()
+        return data
     
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'Lead':
-        """
-        Crea un objeto Lead desde un diccionario.
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Lead':
+        """Crea un objeto Lead desde un diccionario."""
+        # Convertir strings ISO a datetimes
+        if 'created_at' in data and isinstance(data['created_at'], str):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if 'updated_at' in data and isinstance(data['updated_at'], str):
+            data['updated_at'] = datetime.fromisoformat(data['updated_at'])
         
-        Args:
-            data (Dict[str, Any]): Datos del lead
-            
-        Returns:
-            Lead: Objeto Lead
-        """
-        return Lead(**data)
+        return cls(**data)
+    
+    def update(self, info: Dict[str, Any]) -> None:
+        """Actualiza los campos del lead con nueva información."""
+        for key, value in info.items():
+            if hasattr(self, key) and value:  # Solo actualizar si el valor no es None o vacío
+                setattr(self, key, value)
+        
+        # Actualizar timestamp
+        self.updated_at = datetime.now()
+        
+    def add_conversation(self, conversation_id: str) -> None:
+        """Asocia una conversación con este lead."""
+        if conversation_id not in self.conversation_ids:
+            self.conversation_ids.append(conversation_id)
+            self.updated_at = datetime.now()

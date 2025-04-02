@@ -8,8 +8,8 @@ setup(
     name="voice-lead-agent",
     version="0.1.0",
     description="AI Agent de Voz para Nutrición de Leads",
-    author="Tu Nombre",
-    author_email="tu.email@ejemplo.com",
+    author="Maximiliano Galindo",
+    author_email="maximilianogalindo7@gmail.com",
     packages=find_packages(),
     include_package_data=True,
     install_requires=requirements,  # Usar las dependencias del archivo requirements.txt

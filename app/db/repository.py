@@ -1,215 +1,423 @@
-# db/repository.py
-import uuid
-import json
-import os
+# app/db/repository.py
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, List, Optional, Any, Union
+from datetime import datetime
+import sqlite3
 
-from app.db.base import BaseRepository
+import json
+
+
 from app.models.lead import Lead
-from app import config
+from app.models.conversation import Conversation, Message
+from app.db.base import Database
 
 logger = logging.getLogger(__name__)
 
-class LeadRepository(BaseRepository):
-    """
-    Repositorio para gestionar leads.
+class LeadRepository:
+    """Repositorio para gestionar leads (prospectos) en la base de datos."""
     
-    Esta implementación usa archivos JSON como almacenamiento, 
-    pero podría cambiarse por una base de datos real.
-    """
-    
-    def __init__(self, storage_dir: str = None):
+    def __init__(self, db: Optional[Database] = None):
         """
-        Inicializa el repositorio de leads.
+        Inicializa el repositorio.
         
         Args:
-            storage_dir (str, optional): Directorio para almacenar los archivos JSON
+            db: Instancia de la base de datos (opcional)
         """
-        self.storage_dir = storage_dir or config.LEADS_STORAGE_DIR or "data/leads"
-        
-        # Crear directorio si no existe
-        os.makedirs(self.storage_dir, exist_ok=True)
+        self.db = db or Database()
     
-    def _get_file_path(self, lead_id: str) -> str:
+
+    def save_lead(self, lead: Lead) -> str:
         """
-        Obtiene la ruta del archivo para un lead.
+        Guarda un lead en la base de datos.
         
         Args:
-            lead_id (str): ID del lead
+            lead: Objeto Lead a guardar
             
         Returns:
-            str: Ruta del archivo
+            ID del lead guardado
         """
-        return os.path.join(self.storage_dir, f"{lead_id}.json")
-    
-    def create(self, data: Dict[str, Any]) -> str:
-        """
-        Crea un nuevo lead.
-        
-        Args:
-            data (Dict[str, Any]): Datos del lead
+        try:
+            lead_dict = lead.to_dict()  # Esto ya debería convertir datetimes a strings
             
-        Returns:
-            str: ID del lead creado
-        """
-        # Generar ID único si no se proporciona
-        lead_id = data.get("id") or str(uuid.uuid4())
-        
-        # Asegurarse de que el ID esté en los datos
-        data["id"] = lead_id
-        
-        # Guardar en archivo
-        file_path = self._get_file_path(lead_id)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"Lead creado: {lead_id}")
-        return lead_id
+            # Convertir conversation_ids a formato serializable (JSON)
+            if 'conversation_ids' in lead_dict:
+                lead_dict['conversation_ids'] = json.dumps(lead_dict['conversation_ids'])
+            
+            # Asegurar que todas las fechas están en formato string
+            for date_field in ['created_at', 'updated_at']:
+                if date_field in lead_dict and not isinstance(lead_dict[date_field], str):
+                    lead_dict[date_field] = lead_dict[date_field].isoformat()
+            
+            # Preparar consulta
+            columns = ', '.join(lead_dict.keys())
+            placeholders = ', '.join(['?' for _ in lead_dict])
+            
+            query = f"INSERT OR REPLACE INTO leads ({columns}) VALUES ({placeholders})"
+            
+            # Ejecutar consulta
+            self.db.cursor.execute(query, tuple(lead_dict.values()))
+            self.db.conn.commit()
+            
+            return lead.id
+            
+        except Exception as e:
+            logger.error(f"Error al guardar lead: {str(e)}")
+            self.db.conn.rollback()
+            raise
     
-    def get(self, id: str) -> Optional[Dict[str, Any]]:
+    def get_lead(self, lead_id: str) -> Optional[Lead]:
         """
         Obtiene un lead por su ID.
         
         Args:
-            id (str): ID del lead
+            lead_id: ID del lead a obtener
             
         Returns:
-            Optional[Dict[str, Any]]: Datos del lead o None si no existe
+            Lead si existe, None en caso contrario
         """
-        file_path = self._get_file_path(id)
-        if not os.path.exists(file_path):
-            return None
-        
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data
-        except Exception as e:
-            logger.error(f"Error al leer lead {id}: {str(e)}")
-            return None
-    
-    def get_lead(self, id: str) -> Optional[Lead]:
-        """
-        Obtiene un lead como objeto Lead.
-        
-        Args:
-            id (str): ID del lead
+            query = "SELECT * FROM leads WHERE id = ?"
             
-        Returns:
-            Optional[Lead]: Objeto Lead o None si no existe
-        """
-        data = self.get(id)
-        if not data:
+            self.db.cursor.execute(query, (lead_id,))
+            row = self.db.cursor.fetchone()
+            
+            if row:
+                # Convertir a diccionario
+                lead_dict = dict(row)
+                
+                # Deserializar conversation_ids de JSON
+                if 'conversation_ids' in lead_dict and lead_dict['conversation_ids']:
+                    try:
+                        lead_dict['conversation_ids'] = json.loads(lead_dict['conversation_ids'])
+                    except:
+                        lead_dict['conversation_ids'] = []
+                
+                # Crear objeto Lead
+                return Lead.from_dict(lead_dict)
+            
             return None
-        
-        return Lead(**data)
+            
+        except Exception as e:
+            logger.error(f"Error al obtener lead: {str(e)}")
+            return None
     
-    def update(self, id: str, data: Dict[str, Any]) -> bool:
+    def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> bool:
         """
         Actualiza un lead existente.
         
         Args:
-            id (str): ID del lead
-            data (Dict[str, Any]): Datos a actualizar
+            lead_id: ID del lead a actualizar
+            updates: Diccionario con campos a actualizar
             
         Returns:
-            bool: True si la actualización fue exitosa
+            True si se actualizó correctamente, False en caso contrario
         """
-        # Verificar si existe
-        current_data = self.get(id)
-        if not current_data:
-            return False
-        
-        # Actualizar datos
-        current_data.update(data)
-        
-        # Asegurar que el ID sea consistente
-        current_data["id"] = id
-        
-        # Guardar actualización
-        file_path = self._get_file_path(id)
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(current_data, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"Lead actualizado: {id}")
-        return True
-    
-    def delete(self, id: str) -> bool:
-        """
-        Elimina un lead.
-        
-        Args:
-            id (str): ID del lead
-            
-        Returns:
-            bool: True si la eliminación fue exitosa
-        """
-        file_path = self._get_file_path(id)
-        if not os.path.exists(file_path):
-            return False
-        
         try:
-            os.remove(file_path)
-            logger.info(f"Lead eliminado: {id}")
+            # Verificar que el lead existe
+            lead = self.get_lead(lead_id)
+            if not lead:
+                return False
+            
+            # Si 'updated_at' está en updates y es string, convertirlo a datetime
+            if 'updated_at' in updates and isinstance(updates['updated_at'], str):
+                try:
+                    updates['updated_at'] = datetime.fromisoformat(updates['updated_at'])
+                except ValueError:
+                    # Si no se puede convertir, usar la fecha actual
+                    updates['updated_at'] = datetime.now()
+            
+            # Si 'created_at' está en updates y es string, convertirlo a datetime
+            if 'created_at' in updates and isinstance(updates['created_at'], str):
+                try:
+                    updates['created_at'] = datetime.fromisoformat(updates['created_at'])
+                except ValueError:
+                    # Si no se puede convertir, dejar el valor original
+                    updates.pop('created_at')
+            
+            # Actualizar campos
+            lead.update(updates)
+            
+            # Guardar cambios
+            self.save_lead(lead)
+            
             return True
+        
         except Exception as e:
-            logger.error(f"Error al eliminar lead {id}: {str(e)}")
+            logger.error(f"Error al actualizar lead: {str(e)}")
+            self.db.conn.rollback()
             return False
     
-    def list_leads(self) -> List[Dict[str, Any]]:
+    def get_all_leads(self) -> List[Lead]:
         """
-        Lista todos los leads.
+        Obtiene todos los leads.
         
         Returns:
-            List[Dict[str, Any]]: Lista de datos de leads
+            Lista de todos los leads
         """
-        leads = []
-        for filename in os.listdir(self.storage_dir):
-            if filename.endswith(".json"):
-                lead_id = filename[:-5]  # Quitar la extensión .json
-                lead_data = self.get(lead_id)
-                if lead_data:
-                    leads.append(lead_data)
-        
-        return leads
+        try:
+            query = "SELECT * FROM leads ORDER BY updated_at DESC"
+            
+            self.db.cursor.execute(query)
+            rows = self.db.cursor.fetchall()
+            
+            # Convertir cada fila a un objeto Lead
+            leads = []
+            for row in rows:
+                lead_dict = dict(row)
+                leads.append(Lead.from_dict(lead_dict))
+            
+            return leads
+            
+        except Exception as e:
+            logger.error(f"Error al obtener todos los leads: {str(e)}")
+            return []
     
-    def create_or_update_lead(self, data: Dict[str, Any]) -> str:
+    def delete_lead(self, lead_id: str) -> bool:
         """
-        Crea o actualiza un lead basado en la información disponible.
+        Elimina un lead por su ID.
         
         Args:
-            data (Dict[str, Any]): Datos del lead
+            lead_id: ID del lead a eliminar
             
         Returns:
-            str: ID del lead
+            True si se eliminó correctamente, False en caso contrario
         """
-        # Si hay ID, intentar actualizar
-        if "id" in data and data["id"]:
-            lead_id = data["id"]
-            success = self.update(lead_id, data)
-            if success:
-                return lead_id
+        try:
+            query = "DELETE FROM leads WHERE id = ?"
+            
+            self.db.cursor.execute(query, (lead_id,))
+            self.db.conn.commit()
+            
+            return self.db.cursor.rowcount > 0
+            
+        except Exception as e:
+            logger.error(f"Error al eliminar lead: {str(e)}")
+            self.db.conn.rollback()
+            return False
         
-        # Si no hay ID o la actualización falló, buscar por email o nombre+empresa
-        leads = self.list_leads()
         
-        # Buscar por email
-        if "email" in data and data["email"]:
-            for lead in leads:
-                if lead.get("email") == data["email"]:
-                    lead_id = lead["id"]
-                    self.update(lead_id, data)
-                    return lead_id
+class ConversationRepository:
+    """Repositorio para gestionar conversaciones en la base de datos."""
+    
+    def __init__(self, db: Optional[Database] = None):
+        """
+        Inicializa el repositorio.
         
-        # Buscar por nombre y empresa
-        if "nombre" in data and data["nombre"] and "empresa" in data and data["empresa"]:
-            for lead in leads:
-                if (lead.get("nombre") == data["nombre"] and 
-                    lead.get("empresa") == data["empresa"]):
-                    lead_id = lead["id"]
-                    self.update(lead_id, data)
-                    return lead_id
+        Args:
+            db: Instancia de la base de datos (opcional)
+        """
+        self.db = db or Database()
+    
+    def save_conversation(self, conversation: Conversation) -> str:
+        """
+        Guarda una conversación en la base de datos.
         
-        # Si no se encontró, crear nuevo
-        return self.create(data)
+        Args:
+            conversation: Objeto Conversation a guardar
+            
+        Returns:
+            ID de la conversación guardada
+        """
+        try:
+            # Primero guardar la conversación
+            data = {
+                'id': conversation.id,
+                'lead_id': conversation.lead_id,
+                'created_at': conversation.created_at.isoformat(),
+                'updated_at': conversation.updated_at.isoformat(),
+                'summary': conversation.summary,
+                'lead_info_extracted': json.dumps(conversation.lead_info_extracted)
+            }
+            
+            if conversation.ended_at:
+                data['ended_at'] = conversation.ended_at.isoformat()
+            
+            # Preparar consulta
+            columns = ', '.join(data.keys())
+            placeholders = ', '.join(['?' for _ in data])
+            
+            query = f"INSERT OR REPLACE INTO conversations ({columns}) VALUES ({placeholders})"
+            
+            # Ejecutar consulta
+            self.db.cursor.execute(query, tuple(data.values()))
+            
+            # Luego guardar los mensajes
+            # Primero eliminar mensajes existentes para esta conversación
+            self.db.cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation.id,))
+            
+            # Insertar nuevos mensajes
+            for message in conversation.messages:
+                msg_data = {
+                    'conversation_id': conversation.id,
+                    'role': message.role,
+                    'content': message.content,
+                    'timestamp': message.timestamp.isoformat(),
+                    'audio_file_path': message.audio_file_path,
+                    'transcription': message.transcription
+                }
+                
+                msg_columns = ', '.join(msg_data.keys())
+                msg_placeholders = ', '.join(['?' for _ in msg_data])
+                
+                msg_query = f"INSERT INTO messages ({msg_columns}) VALUES ({msg_placeholders})"
+                
+                self.db.cursor.execute(msg_query, tuple(msg_data.values()))
+            
+            self.db.conn.commit()
+            return conversation.id
+            
+        except Exception as e:
+            logger.error(f"Error al guardar conversación: {str(e)}")
+            self.db.conn.rollback()
+            raise
+    
+    def get_conversation(self, conversation_id: str) -> Optional[Conversation]:
+        """
+        Obtiene una conversación por su ID.
+        
+        Args:
+            conversation_id: ID de la conversación a obtener
+            
+        Returns:
+            Conversation si existe, None en caso contrario
+        """
+        try:
+            # Obtener datos de la conversación
+            query = "SELECT * FROM conversations WHERE id = ?"
+            
+            self.db.cursor.execute(query, (conversation_id,))
+            row = self.db.cursor.fetchone()
+            
+            if not row:
+                return None
+            
+            # Convertir a diccionario
+            conv_dict = dict(row)
+            
+            # Procesar campos específicos
+            if 'lead_info_extracted' in conv_dict and conv_dict['lead_info_extracted']:
+                try:
+                    conv_dict['lead_info_extracted'] = json.loads(conv_dict['lead_info_extracted'])
+                except:
+                    conv_dict['lead_info_extracted'] = {}
+            
+            # Crear objeto Conversation
+            conversation = Conversation.from_dict(conv_dict)
+            
+            # Obtener mensajes de la conversación
+            msg_query = "SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp"
+            
+            self.db.cursor.execute(msg_query, (conversation_id,))
+            msg_rows = self.db.cursor.fetchall()
+            
+            # Añadir mensajes
+            conversation.messages = []
+            for msg_row in msg_rows:
+                try:
+                    msg_dict = dict(msg_row)
+                    # Extraer los campos que sí usa Message
+                    filtered_msg = {
+                        'role': msg_dict.get('role'),
+                        'content': msg_dict.get('content'),
+                        'timestamp': msg_dict.get('timestamp'),
+                        'audio_file_path': msg_dict.get('audio_file_path'),
+                        'transcription': msg_dict.get('transcription'),
+                        'id': msg_dict.get('id'),
+                        'conversation_id': msg_dict.get('conversation_id')
+                    }
+                    # Eliminar None values para evitar problemas con campos requeridos
+                    filtered_msg = {k: v for k, v in filtered_msg.items() if v is not None}
+                    
+                    message = Message(**filtered_msg)
+                    conversation.messages.append(message)
+                except Exception as e:
+                    logger.error(f"Error al procesar mensaje: {str(e)}, datos: {msg_dict}")
+                    # Continuar con el siguiente mensaje
+            
+            return conversation
+            
+        except Exception as e:
+            logger.error(f"Error al obtener conversación: {str(e)}")
+            return None
+    
+    def get_conversations_by_lead(self, lead_id: str) -> List[Conversation]:
+        """
+        Obtiene todas las conversaciones de un lead.
+        
+        Args:
+            lead_id: ID del lead
+            
+        Returns:
+            Lista de conversaciones
+        """
+        try:
+            query = "SELECT id FROM conversations WHERE lead_id = ? ORDER BY created_at DESC"
+            
+            self.db.cursor.execute(query, (lead_id,))
+            rows = self.db.cursor.fetchall()
+            
+            conversations = []
+            for row in rows:
+                conversation_id = row['id']
+                conversation = self.get_conversation(conversation_id)
+                if conversation:
+                    conversations.append(conversation)
+            
+            return conversations
+            
+        except Exception as e:
+            logger.error(f"Error al obtener conversaciones por lead: {str(e)}")
+            return []
+    
+    def delete_conversation(self, conversation_id: str) -> bool:
+        """
+        Elimina una conversación por su ID.
+        
+        Args:
+            conversation_id: ID de la conversación a eliminar
+            
+        Returns:
+            True si se eliminó correctamente, False en caso contrario
+        """
+        try:
+            # Primero eliminar mensajes
+            self.db.cursor.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+            
+            # Luego eliminar conversación
+            query = "DELETE FROM conversations WHERE id = ?"
+            
+            self.db.cursor.execute(query, (conversation_id,))
+            self.db.conn.commit()
+            
+            return self.db.cursor.rowcount > 0
+            
+        except Exception as e:
+            logger.error(f"Error al eliminar conversación: {str(e)}")
+            self.db.conn.rollback()
+            return False
+    
+    def get_all_conversations(self) -> List[Conversation]:
+        """
+        Obtiene todas las conversaciones.
+        
+        Returns:
+            Lista de todas las conversaciones
+        """
+        try:
+            query = "SELECT id FROM conversations ORDER BY updated_at DESC"
+            
+            self.db.cursor.execute(query)
+            rows = self.db.cursor.fetchall()
+            
+            conversations = []
+            for row in rows:
+                conversation_id = row['id']
+                conversation = self.get_conversation(conversation_id)
+                if conversation:
+                    conversations.append(conversation)
+            
+            return conversations
+            
+        except Exception as e:
+            logger.error(f"Error al obtener todas las conversaciones: {str(e)}")
+            return []

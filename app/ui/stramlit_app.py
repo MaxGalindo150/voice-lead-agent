@@ -3,7 +3,7 @@ import streamlit as st
 
 # Importar páginas
 from app.ui.pages.chat import show as show_chat
-# from app.ui.pages.leads import show as show_leads
+from app.ui.pages.leads import show as show_leads
 # from app.ui.pages.settings import show as show_settings
 
 # Configuración de la página
@@ -27,11 +27,10 @@ page = st.sidebar.radio(
 if page == "Chat":
     show_chat()
 elif page == "Leads":
-    #show_leads()
-    pass
+    show_leads()
 elif page == "Configuración":
    # show_settings()
-    pass
+   pass
 
 # Información adicional en el sidebar
 st.sidebar.markdown("---")

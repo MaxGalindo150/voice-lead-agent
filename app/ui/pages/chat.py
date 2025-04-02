@@ -12,6 +12,99 @@ from io import BytesIO
 import threading
 import uuid
 
+
+class StreamlitAudioRecorder:
+    """Adaptador para grabar audio en Streamlit."""
+    
+    def __init__(self):
+        # Inicializar variables
+        self.p = None
+        self.stream = None
+        self.frames = []
+        self.is_recording = False
+        self.stop_event = threading.Event()
+    
+    def start_recording(self):
+        """Inicia la grabación de audio."""
+        if self.is_recording:
+            return
+            
+        self.is_recording = True
+        self.frames = []
+        self.stop_event.clear()
+        
+        # Inicializar PyAudio si no existe
+        if not self.p:
+            self.p = pyaudio.PyAudio()
+            
+        # Crear stream
+        try:
+            self.stream = self.p.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                frames_per_buffer=CHUNK
+            )
+            
+            # Iniciar hilo de grabación
+            self.thread = threading.Thread(target=self._record)
+            self.thread.daemon = True
+            self.thread.start()
+            return True
+        except Exception as e:
+            print(f"Error iniciando grabación: {e}")
+            self.is_recording = False
+            return False
+    
+    def stop_recording(self):
+        """Detiene la grabación de audio."""
+        if not self.is_recording:
+            return
+            
+        self.is_recording = False
+        self.stop_event.set()
+        
+        # Esperar a que el hilo termine
+        if hasattr(self, 'thread') and self.thread.is_alive():
+            self.thread.join(timeout=1)
+            
+        # Cerrar stream
+        if self.stream:
+            self.stream.stop_stream()
+            self.stream.close()
+            self.stream = None
+    
+    def _record(self):
+        """Función interna para grabar audio."""
+        try:
+            while self.is_recording and not self.stop_event.is_set():
+                data = self.stream.read(CHUNK, exception_on_overflow=False)
+                self.frames.append(data)
+        except Exception as e:
+            print(f"Error en grabación: {e}")
+        finally:
+            # Asegurar que el stream se cierra
+            if self.stream:
+                self.stream.stop_stream()
+                self.stream.close()
+                self.stream = None
+            self.is_recording = False
+    
+    def get_audio_data(self):
+        """Retorna los datos de audio grabados."""
+        if not self.frames:
+            return None
+        return b''.join(self.frames)
+    
+    def close(self):
+        """Libera recursos."""
+        self.stop_recording()
+        if self.p:
+            self.p.terminate()
+            self.p = None
+
+
 # Configurar logging básico
 logging.basicConfig(level=logging.INFO, 
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -43,7 +136,7 @@ def init_chat_page():
     if 'conversation_manager' not in st.session_state:
         with st.spinner("Inicializando componentes..."):
             llm = create_llm("openai")  # O el modelo que uses
-            asr = WhisperASR(model_size="base")
+            asr = WhisperASR(model_size="turbo")
             tts = TTSProcessor()
             st.session_state.conversation_manager = ConversationManager(
                 llm=llm, asr=asr, tts=tts
@@ -57,20 +150,16 @@ def init_chat_page():
         st.session_state.messages = []
     if 'recording' not in st.session_state:
         st.session_state.recording = False
-    if 'stop_recording' not in st.session_state:
-        st.session_state.stop_recording = threading.Event()
-    if 'audio_bytes' not in st.session_state:
-        st.session_state.audio_bytes = None
     if 'lead_info' not in st.session_state:
         st.session_state.lead_info = {}
-    if 'audio_stream' not in st.session_state:
-        st.session_state.audio_stream = None
     if 'pyaudio_instance' not in st.session_state:
         st.session_state.pyaudio_instance = pyaudio.PyAudio()
-    if 'recorder_thread' not in st.session_state:
-        st.session_state.recorder_thread = None
-    if 'input_mode' not in st.session_state:
-        st.session_state.input_mode = "text"  # "text" o "voice"
+    if 'audio_recorder' not in st.session_state:
+        st.session_state.audio_recorder = StreamlitAudioRecorder()
+    
+    # Aseguramos que el audio_recorder esté correctamente inicializado
+    if st.session_state.recording and st.session_state.audio_recorder.stream is None:
+        st.session_state.recording = False
 
 def send_text_message():
     """Envía un mensaje de texto al asistente"""
@@ -104,7 +193,7 @@ def send_text_message():
                 
                 # Reproducir respuesta de audio si está disponible
                 if result.get("audio_response"):
-                    st.audio(result["audio_response"], format="audio/mp3")
+                    st.audio(result["audio_response"], format="audio/mp3", autoplay=True)
                 
                 # Actualizar información del lead
                 if result.get("lead_info"):
@@ -130,7 +219,7 @@ def render_chat_messages():
                 with col1:
                     st.markdown(
                         f"""
-                        <div style="background-color: #dcf8c6; 
+                        <div style="background-color: #054640; 
                                     border-radius: 10px; 
                                     padding: 10px; 
                                     margin-bottom: 10px;
@@ -139,7 +228,7 @@ def render_chat_messages():
                             <span style="font-weight: bold;">Tú:</span><br>
                             {msg['content']}
                             <span style="font-size: 0.8em; 
-                                        color: #888; 
+                                        color: #ffff; 
                                         position: absolute; 
                                         bottom: 5px; 
                                         right: 10px;">
@@ -155,7 +244,7 @@ def render_chat_messages():
                 with col2:
                     st.markdown(
                         f"""
-                        <div style="background-color: #f1f0f0; 
+                        <div style="background-color: #454545; 
                                     border-radius: 10px; 
                                     padding: 10px; 
                                     margin-bottom: 10px;
@@ -164,7 +253,7 @@ def render_chat_messages():
                             <span style="font-weight: bold;">LeadBot:</span><br>
                             {msg['content']}
                             <span style="font-size: 0.8em; 
-                                        color: #888; 
+                                        color: #ffff; 
                                         position: absolute; 
                                         bottom: 5px; 
                                         right: 10px;">
@@ -250,11 +339,47 @@ def render_lead_info():
                 unsafe_allow_html=True
             )
 
+
+def reproduce_audio(audio_bytes):
+    """Reproduce el audio recibido"""
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+
+def reset_conversation():
+    """Reinicia la conversación actual"""
+    # Finalizar la conversación anterior si existe
+    if st.session_state.conversation_id:
+        try:
+            st.session_state.conversation_manager.end_conversation(
+                st.session_state.conversation_id
+            )
+        except:
+            pass
+    
+    # Reiniciar estados
+    st.session_state.conversation_id = None
+    st.session_state.messages = []
+    st.session_state.lead_info = {}
+    
+    # Detener grabación si está activa
+    if st.session_state.recording:
+        stop_recording()
+    
+    # Limpiar recursos del grabador
+    if 'audio_recorder' in st.session_state:
+        st.session_state.audio_recorder.close()
+        # Crear un nuevo grabador
+        st.session_state.audio_recorder = StreamlitAudioRecorder()
+        
 def render_chat_page():
     st.title("💬 LeadBot - Asistente Virtual")
     
     # Inicializar página
     init_chat_page()
+    
+    # Limpiar estados de botones para evitar duplicación
+    if 'button_pressed' in st.session_state:
+        del st.session_state.button_pressed
     
     # Dividir la página en dos secciones: chat e info
     chat_col, info_col = st.columns([3, 1])
@@ -270,97 +395,89 @@ def render_chat_page():
         control_container = st.container()
         
         with control_container:
-            # Selector de modo de entrada
-            mode_col1, mode_col2 = st.columns([3, 2])
+            # Botón de nueva conversación en la esquina superior derecha
+            if st.button("🔄 Nueva Conversación"):
+                reset_conversation()
+                st.rerun()
             
-            with mode_col1:
-                st.session_state.input_mode = st.radio(
-                    "Modo de entrada:",
-                    options=["Texto", "Voz"],
-                    horizontal=True,
-                    key="input_mode_selector"
-                ).lower()
+            # Interfaz unificada de texto con micrófono
+            input_col1, input_col2, input_col3 = st.columns([5, 1, 1])
             
-            with mode_col2:
-                if st.button("🔄 Nueva Conversación"):
-                    reset_conversation()
-                    st.rerun()
+            with input_col1:
+                st.text_input(
+                    "Escribe tu mensaje...",
+                    key="user_input",
+                    on_change=send_text_message
+                )
             
-            # Interfaz según el modo seleccionado
-            if st.session_state.input_mode == "texto":
-                # Input de texto estilo WhatsApp
-                input_col1, input_col2 = st.columns([6, 1])
-                
-                with input_col1:
-                    st.text_input(
-                        "Escribe tu mensaje...",
-                        key="user_input",
-                        on_change=send_text_message
-                    )
-                
-                with input_col2:
-                    if st.button("📤 Enviar", use_container_width=True):
-                        send_text_message()
-            else:
-                # Controles de grabación de voz
-                voice_col1, voice_col2, voice_col3 = st.columns([1, 1, 1])
+            with input_col2:
+                # Botón de enviar mensaje de texto
+                if st.button("📤", use_container_width=True, help="Enviar mensaje"):
+                    send_text_message()
+            
+            with input_col3:
+                # Botón de grabación que cambia según el estado
+                # button_key = str(uuid.uuid4())  # Generar una clave única para evitar duplicación de eventos
                 
                 if not st.session_state.recording:
-                    if voice_col1.button("🎤 Iniciar Grabación", use_container_width=True):
-                        start_recording()
+                    if st.button("🎤", key=f"mic_btn", use_container_width=True, help="Grabar audio"):
+                        # Evitar procesamiento duplicado
+                        if not ('button_pressed' in st.session_state and st.session_state.button_pressed == 'start_recording'):
+                            st.session_state.button_pressed = 'start_recording'
+                            start_recording()
+                            st.session_state.recording = True
+                            st.rerun()
                 else:
-                    if voice_col1.button("⏹️ Detener Grabación", type="primary", use_container_width=True):
-                        stop_recording()
-                        process_recorded_audio()
+                    if st.button("⏹️", key=f"stop_btn", use_container_width=True, help="Detener grabación", type="primary"):
+                        # Evitar procesamiento duplicado
+                        if not ('button_pressed' in st.session_state and st.session_state.button_pressed == 'stop_recording'):
+                            st.session_state.button_pressed = 'stop_recording'
+                            stop_recording()
+                            process_recorded_audio()
+                            if 'audio_response' in st.session_state:
+                                st.session_state.last_audio_response = st.session_state.audio_response
+                            st.session_state.recording = False
+                            st.rerun()
                 
-                # Mostrar estado de la grabación
-                if st.session_state.recording:
-                    voice_col2.markdown("🔴 **Grabando...**")
-                    
-                    # Progreso de grabación
-                    progress_placeholder = st.empty()
-                    recording_start = time.time()
-                    
-                    while st.session_state.recording and time.time() - recording_start < MAX_RECORDING_SECONDS:
-                        progress = min((time.time() - recording_start) / MAX_RECORDING_SECONDS, 1.0)
-                        progress_placeholder.progress(progress)
-                        time.sleep(0.1)
-                    
-                    if st.session_state.recording and time.time() - recording_start >= MAX_RECORDING_SECONDS:
-                        stop_recording()
-                        process_recorded_audio()
-                        progress_placeholder.empty()
+                if 'last_audio_response' in st.session_state and st.session_state.last_audio_response:
+                    st.audio(st.session_state.last_audio_response, format="audio/mp3", autoplay=True)
+            
+            # Mostrar estado de la grabación
+            if st.session_state.recording:
+                st.markdown("🔴 **Grabando...**")
+                
+                # Progreso de grabación
+                progress_placeholder = st.empty()
+                
+                # Calcular el progreso
+                elapsed_time = time.time() - st.session_state.recording_start_time
+                progress = min(elapsed_time / MAX_RECORDING_SECONDS, 1.0)
+                progress_placeholder.progress(progress)
+                
+                # Detener automáticamente si llega al tiempo máximo
+                if elapsed_time >= MAX_RECORDING_SECONDS and not ('processing_audio' in st.session_state and st.session_state.processing_audio):
+                    stop_recording()
+                    process_recorded_audio()
+                    # No usamos st.rerun() aquí para evitar duplicación
     
     # Panel lateral con información del lead
     with info_col:
         render_lead_info()
-
+        
 def start_recording():
-    """Inicia la grabación de audio en un hilo separado"""
+    """Inicia la grabación de audio"""
     if st.session_state.recording:
         return
     
-    st.session_state.recording = True
-    st.session_state.stop_recording.clear()
-    st.session_state.frames = []
+    # Iniciar grabación
+    success = st.session_state.audio_recorder.start_recording()
     
-    # Iniciar PyAudio si no está inicializado
-    if not st.session_state.pyaudio_instance:
-        st.session_state.pyaudio_instance = pyaudio.PyAudio()
-    
-    # Crear stream de audio
-    st.session_state.audio_stream = st.session_state.pyaudio_instance.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=RATE,
-        input=True,
-        frames_per_buffer=CHUNK
-    )
-    
-    # Iniciar hilo de grabación
-    st.session_state.recorder_thread = threading.Thread(target=recording_thread)
-    st.session_state.recorder_thread.daemon = True
-    st.session_state.recorder_thread.start()
+    if success:
+        st.session_state.recording = True
+        # Inicializar el tiempo de inicio
+        st.session_state.recording_start_time = time.time()
+    else:
+        st.error("Error al iniciar la grabación")
 
 def recording_thread():
     """Función que se ejecuta en un hilo para grabar audio"""
@@ -382,26 +499,22 @@ def stop_recording():
     if not st.session_state.recording:
         return
     
+    # Detener grabación
+    st.session_state.audio_recorder.stop_recording()
     st.session_state.recording = False
-    st.session_state.stop_recording.set()
     
-    # Esperar a que el hilo termine
-    if st.session_state.recorder_thread and st.session_state.recorder_thread.is_alive():
-        st.session_state.recorder_thread.join(timeout=1)
-    
-    # Cerrar stream si sigue abierto
-    if st.session_state.audio_stream:
-        st.session_state.audio_stream.stop_stream()
-        st.session_state.audio_stream.close()
-        st.session_state.audio_stream = None
+    # Limpiar el tiempo de inicio
+    if 'recording_start_time' in st.session_state:
+        del st.session_state.recording_start_time
 
+    
 def process_recorded_audio():
     """Procesa el audio grabado y lo envía al backend"""
-    if not hasattr(st.session_state, 'frames') or not st.session_state.frames or len(st.session_state.frames) < 10:
+    audio_data = st.session_state.audio_recorder.get_audio_data()
+    
+    if audio_data is None or len(audio_data) < 1000:  # Al menos 1KB
         st.warning("La grabación es demasiado corta para procesar.")
         return
-    
-    audio_data = b''.join(st.session_state.frames)
     
     # Guardar temporalmente el audio para procesarlo
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
@@ -447,7 +560,8 @@ def process_recorded_audio():
             
             # Reproducir respuesta de audio
             if result.get("audio_response"):
-                st.audio(result["audio_response"], format="audio/mp3")
+                st.session_state.audio_response = result["audio_response"]
+                st.audio(result["audio_response"], format="audio/mp3", autoplay=True)
             
             # Actualizar información del lead
             if result.get("lead_info"):
@@ -461,27 +575,7 @@ def process_recorded_audio():
         os.unlink(temp_filename)
     except:
         pass
-
-def reset_conversation():
-    """Reinicia la conversación actual"""
-    # Finalizar la conversación anterior si existe
-    if st.session_state.conversation_id:
-        try:
-            st.session_state.conversation_manager.end_conversation(
-                st.session_state.conversation_id
-            )
-        except:
-            pass
     
-    # Reiniciar estados
-    st.session_state.conversation_id = None
-    st.session_state.messages = []
-    st.session_state.lead_info = {}
-    
-    # Detener grabación si está activa
-    if st.session_state.recording:
-        stop_recording()
-
 # Función principal que se llama desde la app principal
 def show():
     render_chat_page()
